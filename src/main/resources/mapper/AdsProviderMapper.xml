@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ckrey.autobackworkflow.mapper.AdsProviderMapper">
+
+    <resultMap id="BaseResultMap" type="com.ckrey.autobackworkflow.domain.AdsProvider">
+            <id property="id" column="id" />
+            <result property="providerCode" column="provider_code" />
+            <result property="displayName" column="display_name" />
+            <result property="providerType" column="provider_type" />
+            <result property="baseUrl" column="base_url" />
+            <result property="credentialRef" column="credential_ref" />
+            <result property="maskedCredentialHint" column="masked_credential_hint" />
+            <result property="timeoutSeconds" column="timeout_seconds" />
+            <result property="maxConcurrency" column="max_concurrency" />
+            <result property="configJson" column="config_json" />
+            <result property="enabled" column="enabled" />
+            <result property="version" column="version" />
+            <result property="createdBy" column="created_by" />
+            <result property="createdAt" column="created_at" />
+            <result property="updatedBy" column="updated_by" />
+            <result property="updatedAt" column="updated_at" />
+            <result property="deleted" column="deleted" />
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id,provider_code,display_name,provider_type,base_url,credential_ref,
+        masked_credential_hint,timeout_seconds,max_concurrency,config_json,enabled,
+        version,created_by,created_at,updated_by,updated_at,
+        deleted
+    </sql>
+</mapper>

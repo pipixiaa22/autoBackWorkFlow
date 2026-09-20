@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ckrey.autobackworkflow.mapper.AdsSkillMapper">
+
+    <resultMap id="BaseResultMap" type="com.ckrey.autobackworkflow.domain.AdsSkill">
+            <id property="id" column="id" />
+            <result property="skillCode" column="skill_code" />
+            <result property="name" column="name" />
+            <result property="description" column="description" />
+            <result property="taskType" column="task_type" />
+            <result property="enabled" column="enabled" />
+            <result property="version" column="version" />
+            <result property="createdBy" column="created_by" />
+            <result property="createdAt" column="created_at" />
+            <result property="updatedBy" column="updated_by" />
+            <result property="updatedAt" column="updated_at" />
+            <result property="deleted" column="deleted" />
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id,skill_code,name,description,task_type,enabled,
+        version,created_by,created_at,updated_by,updated_at,
+        deleted
+    </sql>
+</mapper>

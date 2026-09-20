@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ckrey.autobackworkflow.mapper.AdsGenerationItemMapper">
+
+    <resultMap id="BaseResultMap" type="com.ckrey.autobackworkflow.domain.AdsGenerationItem">
+            <id property="id" column="id" />
+            <result property="taskId" column="task_id" />
+            <result property="itemNo" column="item_no" />
+            <result property="segmentId" column="segment_id" />
+            <result property="segmentVersion" column="segment_version" />
+            <result property="providerId" column="provider_id" />
+            <result property="modelId" column="model_id" />
+            <result property="providerCodeSnapshot" column="provider_code_snapshot" />
+            <result property="modelCodeSnapshot" column="model_code_snapshot" />
+            <result property="voiceId" column="voice_id" />
+            <result property="textSnapshot" column="text_snapshot" />
+            <result property="parametersJson" column="parameters_json" />
+            <result property="requestHash" column="request_hash" />
+            <result property="status" column="status" />
+            <result property="attemptCount" column="attempt_count" />
+            <result property="maxAttempts" column="max_attempts" />
+            <result property="nextRetryAt" column="next_retry_at" />
+            <result property="externalTaskId" column="external_task_id" />
+            <result property="audioAssetId" column="audio_asset_id" />
+            <result property="warningsJson" column="warnings_json" />
+            <result property="errorCode" column="error_code" />
+            <result property="errorMessage" column="error_message" />
+            <result property="startedAt" column="started_at" />
+            <result property="finishedAt" column="finished_at" />
+            <result property="version" column="version" />
+            <result property="createdAt" column="created_at" />
+            <result property="updatedAt" column="updated_at" />
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id,task_id,item_no,segment_id,segment_version,provider_id,
+        model_id,provider_code_snapshot,model_code_snapshot,voice_id,text_snapshot,
+        parameters_json,request_hash,status,attempt_count,max_attempts,
+        next_retry_at,external_task_id,audio_asset_id,warnings_json,error_code,
+        error_message,started_at,finished_at,version,created_at,
+        updated_at
+    </sql>
+</mapper>

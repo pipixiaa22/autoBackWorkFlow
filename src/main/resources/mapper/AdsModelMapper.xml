@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ckrey.autobackworkflow.mapper.AdsModelMapper">
+
+    <resultMap id="BaseResultMap" type="com.ckrey.autobackworkflow.domain.AdsModel">
+            <id property="id" column="id" />
+            <result property="providerId" column="provider_id" />
+            <result property="modelCode" column="model_code" />
+            <result property="displayName" column="display_name" />
+            <result property="modelType" column="model_type" />
+            <result property="capabilitiesJson" column="capabilities_json" />
+            <result property="defaultParametersJson" column="default_parameters_json" />
+            <result property="enabled" column="enabled" />
+            <result property="sortNo" column="sort_no" />
+            <result property="version" column="version" />
+            <result property="createdBy" column="created_by" />
+            <result property="createdAt" column="created_at" />
+            <result property="updatedBy" column="updated_by" />
+            <result property="updatedAt" column="updated_at" />
+            <result property="deleted" column="deleted" />
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id,provider_id,model_code,display_name,model_type,capabilities_json,
+        default_parameters_json,enabled,sort_no,version,created_by,
+        created_at,updated_by,updated_at,deleted
+    </sql>
+</mapper>

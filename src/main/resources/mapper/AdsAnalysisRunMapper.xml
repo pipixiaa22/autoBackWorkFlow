@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ckrey.autobackworkflow.mapper.AdsAnalysisRunMapper">
+
+    <resultMap id="BaseResultMap" type="com.ckrey.autobackworkflow.domain.AdsAnalysisRun">
+            <id property="id" column="id" />
+            <result property="runNo" column="run_no" />
+            <result property="projectId" column="project_id" />
+            <result property="projectVersion" column="project_version" />
+            <result property="skillVersionId" column="skill_version_id" />
+            <result property="providerId" column="provider_id" />
+            <result property="modelId" column="model_id" />
+            <result property="providerCodeSnapshot" column="provider_code_snapshot" />
+            <result property="modelCodeSnapshot" column="model_code_snapshot" />
+            <result property="rewriteMode" column="rewrite_mode" />
+            <result property="backgroundSnapshot" column="background_snapshot" />
+            <result property="dialogueSnapshot" column="dialogue_snapshot" />
+            <result property="inputHash" column="input_hash" />
+            <result property="promptHash" column="prompt_hash" />
+            <result property="modelParametersJson" column="model_parameters_json" />
+            <result property="status" column="status" />
+            <result property="rawResponseJson" column="raw_response_json" />
+            <result property="candidateResultJson" column="candidate_result_json" />
+            <result property="validationWarningsJson" column="validation_warnings_json" />
+            <result property="errorCode" column="error_code" />
+            <result property="errorMessage" column="error_message" />
+            <result property="startedAt" column="started_at" />
+            <result property="finishedAt" column="finished_at" />
+            <result property="appliedAt" column="applied_at" />
+            <result property="appliedBy" column="applied_by" />
+            <result property="version" column="version" />
+            <result property="createdBy" column="created_by" />
+            <result property="createdAt" column="created_at" />
+            <result property="updatedAt" column="updated_at" />
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id,run_no,project_id,project_version,skill_version_id,provider_id,
+        model_id,provider_code_snapshot,model_code_snapshot,rewrite_mode,background_snapshot,
+        dialogue_snapshot,input_hash,prompt_hash,model_parameters_json,status,
+        raw_response_json,candidate_result_json,validation_warnings_json,error_code,error_message,
+        started_at,finished_at,applied_at,applied_by,version,
+        created_by,created_at,updated_at
+    </sql>
+</mapper>

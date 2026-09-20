@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ckrey.autobackworkflow.mapper.AdsProjectMapper">
+
+    <resultMap id="BaseResultMap" type="com.ckrey.autobackworkflow.domain.AdsProject">
+            <id property="id" column="id" />
+            <result property="projectNo" column="project_no" />
+            <result property="name" column="name" />
+            <result property="storyBackground" column="story_background" />
+            <result property="originalDialogue" column="original_dialogue" />
+            <result property="outputMode" column="output_mode" />
+            <result property="defaultSkillVersionId" column="default_skill_version_id" />
+            <result property="status" column="status" />
+            <result property="analysisStale" column="analysis_stale" />
+            <result property="version" column="version" />
+            <result property="createdBy" column="created_by" />
+            <result property="createdAt" column="created_at" />
+            <result property="updatedBy" column="updated_by" />
+            <result property="updatedAt" column="updated_at" />
+            <result property="deletedAt" column="deleted_at" />
+            <result property="deleted" column="deleted" />
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id,project_no,name,story_background,original_dialogue,output_mode,
+        default_skill_version_id,status,analysis_stale,version,created_by,
+        created_at,updated_by,updated_at,deleted_at,deleted
+    </sql>
+</mapper>

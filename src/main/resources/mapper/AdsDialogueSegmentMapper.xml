@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ckrey.autobackworkflow.mapper.AdsDialogueSegmentMapper">
+
+    <resultMap id="BaseResultMap" type="com.ckrey.autobackworkflow.domain.AdsDialogueSegment">
+            <id property="id" column="id" />
+            <result property="projectId" column="project_id" />
+            <result property="segmentNo" column="segment_no" />
+            <result property="speakerId" column="speaker_id" />
+            <result property="speakerNameSnapshot" column="speaker_name_snapshot" />
+            <result property="semanticGroup" column="semantic_group" />
+            <result property="sourceStart" column="source_start" />
+            <result property="sourceEnd" column="source_end" />
+            <result property="originalText" column="original_text" />
+            <result property="spokenText" column="spoken_text" />
+            <result property="subtitleText" column="subtitle_text" />
+            <result property="emotionJson" column="emotion_json" />
+            <result property="toneJson" column="tone_json" />
+            <result property="speed" column="speed" />
+            <result property="volume" column="volume" />
+            <result property="pauseBeforeMs" column="pause_before_ms" />
+            <result property="pauseAfterMs" column="pause_after_ms" />
+            <result property="emphasisJson" column="emphasis_json" />
+            <result property="voiceDirection" column="voice_direction" />
+            <result property="rewriteMode" column="rewrite_mode" />
+            <result property="rewriteLevel" column="rewrite_level" />
+            <result property="rewriteReason" column="rewrite_reason" />
+            <result property="manualEdited" column="manual_edited" />
+            <result property="audioStale" column="audio_stale" />
+            <result property="analysisRunId" column="analysis_run_id" />
+            <result property="version" column="version" />
+            <result property="createdBy" column="created_by" />
+            <result property="createdAt" column="created_at" />
+            <result property="updatedBy" column="updated_by" />
+            <result property="updatedAt" column="updated_at" />
+            <result property="deleted" column="deleted" />
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id,project_id,segment_no,speaker_id,speaker_name_snapshot,semantic_group,
+        source_start,source_end,original_text,spoken_text,subtitle_text,
+        emotion_json,tone_json,speed,volume,pause_before_ms,
+        pause_after_ms,emphasis_json,voice_direction,rewrite_mode,rewrite_level,
+        rewrite_reason,manual_edited,audio_stale,analysis_run_id,version,
+        created_by,created_at,updated_by,updated_at,deleted
+    </sql>
+</mapper>

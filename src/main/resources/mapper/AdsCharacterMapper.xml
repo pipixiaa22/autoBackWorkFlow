@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ckrey.autobackworkflow.mapper.AdsCharacterMapper">
+
+    <resultMap id="BaseResultMap" type="com.ckrey.autobackworkflow.domain.AdsCharacter">
+            <id property="id" column="id" />
+            <result property="projectId" column="project_id" />
+            <result property="characterCode" column="character_code" />
+            <result property="name" column="name" />
+            <result property="description" column="description" />
+            <result property="defaultProviderId" column="default_provider_id" />
+            <result property="defaultModelId" column="default_model_id" />
+            <result property="defaultVoiceId" column="default_voice_id" />
+            <result property="voiceConfigJson" column="voice_config_json" />
+            <result property="sortNo" column="sort_no" />
+            <result property="version" column="version" />
+            <result property="createdBy" column="created_by" />
+            <result property="createdAt" column="created_at" />
+            <result property="updatedBy" column="updated_by" />
+            <result property="updatedAt" column="updated_at" />
+            <result property="deleted" column="deleted" />
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id,project_id,character_code,name,description,default_provider_id,
+        default_model_id,default_voice_id,voice_config_json,sort_no,version,
+        created_by,created_at,updated_by,updated_at,deleted
+    </sql>
+</mapper>

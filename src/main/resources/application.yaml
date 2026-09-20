@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: autoBackWorkFlow
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: ${ADS_DB_USERNAME:root}
+    password: ${ADS_DB_PASSWORD:}
+    url: ${ADS_DB_URL:jdbc:mysql://localhost:3306/audio_dialogue_studio?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
+  flyway:
+    enabled: ${ADS_FLYWAY_ENABLED:false}
+    baseline-on-migrate: true
+
+server:
+  error:
+    include-message: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+ads:
+  storage:
+    root: ${ADS_STORAGE_ROOT:./data/assets}
+  task:
+    max-attempts: 3
+  srt:
+    chars-per-second: 4.0
+    gap-ms: 200
+    comma-pause-ms: 150
+    sentence-pause-ms: 300
+    min-duration-ms: 1200
