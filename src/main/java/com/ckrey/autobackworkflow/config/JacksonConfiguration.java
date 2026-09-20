@@ -1,6 +1,6 @@
 package com.ckrey.autobackworkflow.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import     com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 

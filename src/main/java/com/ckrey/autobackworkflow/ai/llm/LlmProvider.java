@@ -6,5 +6,6 @@ import com.ckrey.autobackworkflow.ai.model.AnalysisCandidate;
 public interface LlmProvider {
     String providerCode();
     AnalysisCandidate analyse(LlmAnalysisCommand command);
-    record LlmAnalysisCommand(String storyBackground, String originalDialogue, String rewriteMode, String prompt) { }
+    record LlmAnalysisCommand(String storyBackground, String originalDialogue, String rewriteMode,
+                              String prompt, String modelCode) { }
 }

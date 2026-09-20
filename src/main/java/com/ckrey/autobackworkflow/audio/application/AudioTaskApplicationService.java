@@ -9,6 +9,8 @@ import com.ckrey.autobackworkflow.common.util.Hashing;
 import com.ckrey.autobackworkflow.domain.*;
 import com.ckrey.autobackworkflow.project.application.ProjectApplicationService;
 import com.ckrey.autobackworkflow.service.*;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.nio.file.Files;
@@ -32,9 +34,10 @@ public class AudioTaskApplicationService {
     private final AdsAudioAssetService assets;
     private final AudioProviderRegistry registry;
     private final Executor applicationTaskExecutor;
+    private final ObjectMapper mapper;
     private final Path root;
 
-    public AudioTaskApplicationService(ProjectApplicationService projects, AdsProviderService providers, AdsModelService models, AdsDialogueSegmentService segments, AdsGenerationTaskService tasks, AdsGenerationItemService items, AdsAudioAssetService assets, AudioProviderRegistry registry, Executor applicationTaskExecutor, @Value("${ads.storage.root:./data/assets}") String root) {
+    public AudioTaskApplicationService(ProjectApplicationService projects, AdsProviderService providers, AdsModelService models, AdsDialogueSegmentService segments, AdsGenerationTaskService tasks, AdsGenerationItemService items, AdsAudioAssetService assets, AudioProviderRegistry registry, Executor applicationTaskExecutor, ObjectMapper mapper, @Value("${ads.storage.root:./data/assets}") String root) {
         this.projects = projects;
         this.providers = providers;
         this.models = models;
@@ -44,6 +47,7 @@ public class AudioTaskApplicationService {
         this.assets = assets;
         this.registry = registry;
         this.applicationTaskExecutor = applicationTaskExecutor;
+        this.mapper = mapper;
         this.root = Path.of(root).toAbsolutePath().normalize();
     }
 
@@ -84,6 +88,11 @@ public class AudioTaskApplicationService {
         tasks.save(task);
         int n = 1;
         for (AdsDialogueSegment s : selected) {
+            Map<String, Object> itemParameters = new LinkedHashMap<>(request.parameters() == null ? Map.of() : request.parameters());
+            if (s.getVoiceDirection() != null) itemParameters.putIfAbsent("instruction", s.getVoiceDirection());
+            if (s.getSpeed() != null) itemParameters.putIfAbsent("speed", s.getSpeed());
+            if (s.getVolume() != null) itemParameters.putIfAbsent("volume", s.getVolume());
+            if (s.getEmotionJson() != null) itemParameters.putIfAbsent("emotion", s.getEmotionJson());
             AdsGenerationItem i = new AdsGenerationItem();
             i.setTaskId(task.getId());
             i.setItemNo(n++);
@@ -95,8 +104,8 @@ public class AudioTaskApplicationService {
             i.setModelCodeSnapshot(model.getModelCode());
             i.setVoiceId(request.voiceId());
             i.setTextSnapshot(s.getSpokenText());
-            i.setParametersJson(Hashing.json(request.parameters() == null ? Map.of() : request.parameters()));
-            i.setRequestHash(Hashing.sha256(projectId + ":" + s.getId() + ":" + s.getVersion() + ":" + model.getModelCode() + ":" + request.voiceId()));
+            i.setParametersJson(Hashing.json(itemParameters));
+            i.setRequestHash(Hashing.sha256(projectId + ":" + s.getId() + ":" + s.getVersion() + ":" + model.getModelCode() + ":" + request.voiceId() + ":" + Hashing.json(itemParameters)));
             i.setStatus("WAITING");
             i.setAttemptCount(0);
             i.setMaxAttempts(3);
@@ -169,8 +178,15 @@ public class AudioTaskApplicationService {
         items.updateById(item);
         try {
             AudioGenerationProvider provider = registry.getRequired(task.getProviderCodeSnapshot());
-            AudioGenerationProvider.AudioGenerationResult result = provider.generate(new AudioGenerationProvider.AudioGenerationCommand(item.getRequestHash(), task.getModelCodeSnapshot(), item.getTextSnapshot(), item.getVoiceId(), new AudioGenerationProvider.VoiceDirection(null, 1d, 1d, Map.of()), "wav", Map.of()));
-            Path destination = root.resolve("audio/" + task.getTaskNo() + "/" + String.format("%03d.wav", item.getItemNo())).normalize();
+            Map<String, Object> parameters = readParameters(item.getParametersJson());
+            String format = stringParameter(parameters, "format", "wav");
+            AudioGenerationProvider.VoiceDirection direction = new AudioGenerationProvider.VoiceDirection(
+                    stringParameter(parameters, "instruction", null), doubleParameter(parameters, "speed", 1d),
+                    doubleParameter(parameters, "volume", 1d), mapParameter(parameters.get("emotion")));
+            AudioGenerationProvider.AudioGenerationResult result = provider.generate(new AudioGenerationProvider.AudioGenerationCommand(
+                    item.getRequestHash(), task.getModelCodeSnapshot(), item.getTextSnapshot(), item.getVoiceId(), direction, format, parameters));
+            String extension = extension(result.mediaType(), format);
+            Path destination = root.resolve("audio/" + task.getTaskNo() + "/" + String.format("%03d.%s", item.getItemNo(), extension)).normalize();
             if (!destination.startsWith(root)) throw new IllegalStateException("invalid asset path");
             Files.createDirectories(destination.getParent());
             Files.write(destination, result.audio());
@@ -188,17 +204,18 @@ public class AudioTaskApplicationService {
             asset.setMediaType(result.mediaType());
             asset.setFileSizeBytes(Files.size(destination));
             asset.setSha256(sha(destination));
-            asset.setDurationMs(Math.round(result.audio().length / 2d / 44100d * 1000));
-            asset.setSampleRateHz(44100);
-            asset.setBitDepth(16);
-            asset.setChannels(1);
-            asset.setManifestJson(Hashing.json(Map.of("warnings", result.warnings())));
+            asset.setDurationMs(longMetadata(result.metadata(), "durationMs", estimatedPcmDuration(result.audio(), format, result.metadata())));
+            asset.setSampleRateHz(intMetadata(result.metadata(), "sampleRate", null));
+            asset.setBitDepth(Set.of("wav", "pcm").contains(format) ? 16 : null);
+            asset.setChannels(Set.of("wav", "pcm").contains(format) ? 1 : null);
+            asset.setManifestJson(Hashing.json(Map.of("warnings", result.warnings(), "providerMetadata", result.metadata())));
             asset.setVersion(1);
             asset.setCreatedAt(new Date());
             asset.setUpdatedAt(new Date());
             asset.setDeleted(0);
             assets.save(asset);
             item.setAudioAssetId(asset.getId());
+            item.setExternalTaskId(result.externalTaskId());
             item.setWarningsJson(Hashing.json(result.warnings()));
             item.setStatus("SUCCESS");
             item.setFinishedAt(new Date());
@@ -238,5 +255,44 @@ public class AudioTaskApplicationService {
         StringBuilder s = new StringBuilder();
         for (byte b : d) s.append(String.format("%02x", b));
         return s.toString();
+    }
+
+    private Map<String, Object> readParameters(Object value) {
+        if (value == null) return new LinkedHashMap<>();
+        try {
+            if (value instanceof String text) return mapper.readValue(text, new TypeReference<>() { });
+            return mapper.convertValue(value, new TypeReference<>() { });
+        } catch (Exception ex) {
+            throw BizException.badRequest("AUDIO_INVALID_PARAMETERS", "保存的音频参数无法读取");
+        }
+    }
+    private static String stringParameter(Map<String, Object> values, String key, String fallback) {
+        Object value = values.get(key); return value instanceof String text && !text.isBlank() ? text : fallback;
+    }
+    private static Double doubleParameter(Map<String, Object> values, String key, Double fallback) {
+        Object value = values.get(key); return value instanceof Number number ? number.doubleValue() : fallback;
+    }
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> mapParameter(Object value) {
+        return value instanceof Map<?, ?> map ? (Map<String, Object>) map : Map.of();
+    }
+    private static String extension(String mediaType, String fallback) {
+        if ("audio/mpeg".equalsIgnoreCase(mediaType)) return "mp3";
+        if ("audio/ogg".equalsIgnoreCase(mediaType)) return "ogg";
+        if ("audio/L16".equalsIgnoreCase(mediaType)) return "pcm";
+        if ("audio/wav".equalsIgnoreCase(mediaType)) return "wav";
+        return fallback.replaceAll("[^a-zA-Z0-9]", "");
+    }
+    private static Long estimatedPcmDuration(byte[] audio, String format, Map<String, Object> metadata) {
+        if (!Set.of("wav", "pcm").contains(format)) return null;
+        Integer rate = intMetadata(metadata, "sampleRate", 40000);
+        int header = "wav".equals(format) && audio.length >= 44 ? 44 : 0;
+        return Math.round(Math.max(0, audio.length - header) / 2d / rate * 1000d);
+    }
+    private static Long longMetadata(Map<String, Object> metadata, String key, Long fallback) {
+        Object value = metadata == null ? null : metadata.get(key); return value instanceof Number number ? number.longValue() : fallback;
+    }
+    private static Integer intMetadata(Map<String, Object> metadata, String key, Integer fallback) {
+        Object value = metadata == null ? null : metadata.get(key); return value instanceof Number number ? number.intValue() : fallback;
     }
 }

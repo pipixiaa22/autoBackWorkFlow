@@ -4,11 +4,15 @@ spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     username: ${ADS_DB_USERNAME:root}
-    password: ${ADS_DB_PASSWORD:}
-    url: ${ADS_DB_URL:jdbc:mysql://localhost:3306/audio_dialogue_studio?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
+    password: ${ADS_DB_PASSWORD:dd8857356}
+    url: ${ADS_DB_URL:jdbc:mysql://115.190.210.249:3306/ckreyWorkFlow?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
   flyway:
     enabled: ${ADS_FLYWAY_ENABLED:false}
     baseline-on-migrate: true
+  data:
+    redis:
+      host: 115.190.210.249
+      password: dd8857356
 
 server:
   error:
@@ -21,6 +25,23 @@ management:
         include: health,info,metrics
 
 ads:
+  ai:
+    seed-audio:
+      base-url: ${SEED_AUDIO_BASE_URL:https://openspeech.bytedance.com}
+      api-key: ${SEED_AUDIO_API_KEY:}
+      model: ${SEED_AUDIO_MODEL:seed-audio-1.0}
+      connect-timeout-ms: ${SEED_AUDIO_CONNECT_TIMEOUT_MS:10000}
+      request-timeout-ms: ${SEED_AUDIO_REQUEST_TIMEOUT_MS:180000}
+      # 音频生成可能计费，默认不自动重试；确认供应商幂等策略后可调高。
+      max-attempts: ${SEED_AUDIO_MAX_ATTEMPTS:1}
+      reference-url-allowed-hosts: ${SEED_AUDIO_REFERENCE_URL_ALLOWED_HOSTS:}
+    deepseek:
+      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+      api-key: ${DEEPSEEK_API_KEY:}
+      model: ${DEEPSEEK_MODEL:deepseek-flash}
+      connect-timeout-ms: ${DEEPSEEK_CONNECT_TIMEOUT_MS:10000}
+      request-timeout-ms: ${DEEPSEEK_REQUEST_TIMEOUT_MS:90000}
+      max-attempts: ${DEEPSEEK_MAX_ATTEMPTS:3}
   storage:
     root: ${ADS_STORAGE_ROOT:./data/assets}
   task:
