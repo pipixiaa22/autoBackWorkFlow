@@ -23,6 +23,7 @@ import java.util.concurrent.Executor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -61,6 +62,7 @@ public class AudioTaskApplicationService {
         AdsModel model = models.getById(request.modelId());
         if (provider == null || provider.getEnabled() != 1 || model == null || model.getEnabled() != 1 || !provider.getId().equals(model.getProviderId()))
             throw BizException.badRequest("PROVIDER_INVALID_MODEL", "Provider 或模型不可用");
+        validateReferenceMode(projectId, request, provider);
         List<AdsDialogueSegment> selected = segments.list(Wrappers.<AdsDialogueSegment>lambdaQuery().eq(AdsDialogueSegment::getProjectId, projectId).eq(AdsDialogueSegment::getDeleted, 0).in(AdsDialogueSegment::getId, request.segmentIds()).orderByAsc(AdsDialogueSegment::getSegmentNo));
         if (selected.size() != new HashSet<>(request.segmentIds()).size())
             throw BizException.badRequest("AUDIO_INVALID_SEGMENTS", "存在不属于项目的分段");
@@ -77,7 +79,11 @@ public class AudioTaskApplicationService {
         task.setProviderCodeSnapshot(provider.getProviderCode());
         task.setModelCodeSnapshot(model.getModelCode());
         task.setIdempotencyKey(key);
-        task.setParametersJson(Hashing.json(request.parameters() == null ? Map.of() : request.parameters()));
+        Map<String, Object> taskParameters = new LinkedHashMap<>(request.parameters() == null ? Map.of() : request.parameters());
+        if (request.referenceAudioAssetIds() != null && !request.referenceAudioAssetIds().isEmpty()) {
+            taskParameters.put("referenceAudioAssetIds", request.referenceAudioAssetIds());
+        }
+        task.setParametersJson(Hashing.json(taskParameters));
         task.setRequestHash(Hashing.sha256(projectId + ":" + request.modelId() + ":" + Hashing.json(request)));
         task.setStatus("PENDING");
         task.setTotalCount(selected.size());
@@ -91,7 +97,7 @@ public class AudioTaskApplicationService {
         tasks.save(task);
         int n = 1;
         for (AdsDialogueSegment s : selected) {
-            Map<String, Object> itemParameters = new LinkedHashMap<>(request.parameters() == null ? Map.of() : request.parameters());
+            Map<String, Object> itemParameters = new LinkedHashMap<>(taskParameters);
             if (s.getVoiceDirection() != null) itemParameters.putIfAbsent("instruction", s.getVoiceDirection());
             if (s.getSpeed() != null) itemParameters.putIfAbsent("speed", s.getSpeed());
             if (s.getVolume() != null) itemParameters.putIfAbsent("volume", s.getVolume());
@@ -105,10 +111,10 @@ public class AudioTaskApplicationService {
             i.setModelId(model.getId());
             i.setProviderCodeSnapshot(provider.getProviderCode());
             i.setModelCodeSnapshot(model.getModelCode());
-            i.setVoiceId(request.voiceId());
+            i.setVoiceId(request.voiceId() == null ? "" : request.voiceId().trim());
             i.setTextSnapshot(s.getSpokenText());
             i.setParametersJson(Hashing.json(itemParameters));
-            i.setRequestHash(Hashing.sha256(projectId + ":" + s.getId() + ":" + s.getVersion() + ":" + model.getModelCode() + ":" + request.voiceId() + ":" + Hashing.json(itemParameters)));
+            i.setRequestHash(Hashing.sha256(projectId + ":" + s.getId() + ":" + s.getVersion() + ":" + model.getModelCode() + ":" + i.getVoiceId() + ":" + Hashing.json(itemParameters)));
             i.setStatus("WAITING");
             i.setAttemptCount(0);
             i.setMaxAttempts(3);
@@ -164,6 +170,44 @@ public class AudioTaskApplicationService {
     }
 
     @Transactional
+    public AdsAudioAsset uploadReferenceAudio(Long projectId, MultipartFile file) {
+        projects.required(projectId);
+        if (file == null || file.isEmpty()) {
+            throw BizException.badRequest("AUDIO_REFERENCE_INVALID", "请上传非空的参考音频");
+        }
+        if (file.getSize() > 10L * 1024 * 1024) {
+            throw BizException.badRequest("AUDIO_REFERENCE_INVALID", "参考音频不能超过 10 MB");
+        }
+        String extension = referenceExtension(file.getOriginalFilename(), file.getContentType());
+        Date now = new Date();
+        AdsAudioAsset asset = new AdsAudioAsset();
+        asset.setAssetNo("RF-" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase());
+        asset.setProjectId(projectId);
+        asset.setAssetType("REFERENCE");
+        asset.setStatus("ACTIVE");
+        asset.setStorageProvider("LOCAL");
+        asset.setOriginalFileName(safeFileName(file.getOriginalFilename(), "reference." + extension));
+        asset.setMediaType(referenceMediaType(extension));
+        asset.setObjectKey("references/" + asset.getAssetNo() + "/" + asset.getOriginalFileName());
+        asset.setVersion(1);
+        asset.setCreatedAt(now);
+        asset.setUpdatedAt(now);
+        asset.setDeleted(0);
+        Path target = root.resolve(asset.getObjectKey()).normalize();
+        if (!target.startsWith(root)) throw BizException.badRequest("AUDIO_REFERENCE_INVALID", "参考音频路径不合法");
+        try {
+            Files.createDirectories(target.getParent());
+            file.transferTo(target);
+            asset.setFileSizeBytes(Files.size(target));
+            asset.setSha256(sha(target));
+            assets.save(asset);
+            return asset;
+        } catch (Exception ex) {
+            throw BizException.badRequest("AUDIO_REFERENCE_UPLOAD_FAILED", "参考音频上传失败");
+        }
+    }
+
+    @Transactional
     public AdsGenerationTask cancel(Long id) {
         AdsGenerationTask t = get(id);
         if (Set.of("SUCCEEDED", "FAILED", "PARTIAL_SUCCESS", "CANCELLED").contains(t.getStatus())) return t;
@@ -211,7 +255,7 @@ public class AudioTaskApplicationService {
         items.updateById(item);
         try {
             AudioGenerationProvider provider = registry.getRequired(task.getProviderCodeSnapshot());
-            Map<String, Object> parameters = readParameters(item.getParametersJson());
+            Map<String, Object> parameters = resolveReferenceAudio(task.getProjectId(), readParameters(item.getParametersJson()));
             String format = stringParameter(parameters, "format", "wav");
             AudioGenerationProvider.VoiceDirection direction = new AudioGenerationProvider.VoiceDirection(
                     stringParameter(parameters, "instruction", null), doubleParameter(parameters, "speed", 1d),
@@ -299,6 +343,65 @@ public class AudioTaskApplicationService {
             throw BizException.badRequest("AUDIO_INVALID_PARAMETERS", "保存的音频参数无法读取");
         }
     }
+    private void validateReferenceMode(Long projectId, AudioDtos.CreateTaskRequest request, AdsProvider provider) {
+        List<Long> referenceIds = request.referenceAudioAssetIds() == null ? List.of() : request.referenceAudioAssetIds();
+        if (referenceIds.size() != new HashSet<>(referenceIds).size()) {
+            throw BizException.badRequest("AUDIO_REFERENCE_INVALID", "参考音频不能重复");
+        }
+        Map<String, Object> parameters = request.parameters() == null ? Map.of() : request.parameters();
+        boolean directReference = parameters.containsKey("referenceAudioData") || parameters.containsKey("referenceAudioUrl")
+                || parameters.containsKey("referenceImageData") || parameters.containsKey("referenceImageUrl");
+        boolean voiceSelected = request.voiceId() != null && !request.voiceId().isBlank();
+        if (voiceSelected && (!referenceIds.isEmpty() || directReference)) {
+            throw BizException.badRequest("AUDIO_REFERENCE_INVALID", "音色 ID 不能与参考音频或参考图片同时使用");
+        }
+        if (!referenceIds.isEmpty()) {
+            if (!"seed-audio".equals(provider.getProviderCode())) {
+                throw BizException.badRequest("AUDIO_REFERENCE_UNSUPPORTED", "当前 Provider 不支持上传参考音频");
+            }
+            if (directReference) {
+                throw BizException.badRequest("AUDIO_REFERENCE_INVALID", "上传参考音频后不能再传入其他参考素材参数");
+            }
+            List<AdsAudioAsset> assetsForProject = assets.list(Wrappers.<AdsAudioAsset>lambdaQuery()
+                    .eq(AdsAudioAsset::getProjectId, projectId).eq(AdsAudioAsset::getAssetType, "REFERENCE")
+                    .eq(AdsAudioAsset::getStatus, "ACTIVE").eq(AdsAudioAsset::getDeleted, 0)
+                    .in(AdsAudioAsset::getId, referenceIds));
+            if (assetsForProject.size() != referenceIds.size()) {
+                throw BizException.badRequest("AUDIO_REFERENCE_INVALID", "存在不可用或不属于项目的参考音频");
+            }
+        }
+    }
+    private Map<String, Object> resolveReferenceAudio(Long projectId, Map<String, Object> parameters) {
+        Object value = parameters.get("referenceAudioAssetIds");
+        if (value == null) return parameters;
+        List<Long> ids;
+        try { ids = mapper.convertValue(value, new TypeReference<>() { }); }
+        catch (IllegalArgumentException ex) { throw BizException.badRequest("AUDIO_REFERENCE_INVALID", "参考音频参数无法读取"); }
+        if (ids == null || ids.isEmpty() || ids.size() > 3) {
+            throw BizException.badRequest("AUDIO_REFERENCE_INVALID", "参考音频数量必须在 1 到 3 之间");
+        }
+        List<AdsAudioAsset> rows = assets.list(Wrappers.<AdsAudioAsset>lambdaQuery()
+                .eq(AdsAudioAsset::getProjectId, projectId).eq(AdsAudioAsset::getAssetType, "REFERENCE")
+                .eq(AdsAudioAsset::getStatus, "ACTIVE").eq(AdsAudioAsset::getDeleted, 0)
+                .in(AdsAudioAsset::getId, ids));
+        if (rows.size() != ids.size()) throw BizException.badRequest("AUDIO_REFERENCE_INVALID", "参考音频不存在或不可用");
+        Map<Long, AdsAudioAsset> byId = new HashMap<>();
+        rows.forEach(asset -> byId.put(asset.getId(), asset));
+        List<String> audioData = new ArrayList<>();
+        for (Long id : ids) {
+            AdsAudioAsset asset = byId.get(id);
+            Path path = root.resolve(asset.getObjectKey()).normalize();
+            if (!path.startsWith(root) || !Files.isRegularFile(path)) {
+                throw BizException.notFound("AUDIO_REFERENCE_FILE_MISSING", "参考音频文件不存在或已过期");
+            }
+            try { audioData.add(Base64.getEncoder().encodeToString(Files.readAllBytes(path))); }
+            catch (Exception ex) { throw BizException.badRequest("AUDIO_REFERENCE_FILE_MISSING", "参考音频文件无法读取"); }
+        }
+        Map<String, Object> resolved = new LinkedHashMap<>(parameters);
+        resolved.remove("referenceAudioAssetIds");
+        resolved.put("referenceAudioData", audioData);
+        return resolved;
+    }
     private static String stringParameter(Map<String, Object> values, String key, String fallback) {
         Object value = values.get(key); return value instanceof String text && !text.isBlank() ? text : fallback;
     }
@@ -311,6 +414,22 @@ public class AudioTaskApplicationService {
         if ("audio/L16".equalsIgnoreCase(mediaType)) return "pcm";
         if ("audio/wav".equalsIgnoreCase(mediaType)) return "wav";
         return fallback.replaceAll("[^a-zA-Z0-9]", "");
+    }
+    private static String referenceExtension(String fileName, String mediaType) {
+        String name = fileName == null ? "" : fileName.toLowerCase(Locale.ROOT);
+        if (name.endsWith(".wav") || "audio/wav".equalsIgnoreCase(mediaType) || "audio/x-wav".equalsIgnoreCase(mediaType)) return "wav";
+        if (name.endsWith(".mp3") || "audio/mpeg".equalsIgnoreCase(mediaType)) return "mp3";
+        if (name.endsWith(".pcm") || "audio/l16".equalsIgnoreCase(mediaType)) return "pcm";
+        if (name.endsWith(".ogg") || "audio/ogg".equalsIgnoreCase(mediaType)) return "ogg";
+        throw BizException.badRequest("AUDIO_REFERENCE_INVALID", "参考音频只支持 wav、mp3、pcm 或 ogg");
+    }
+    private static String referenceMediaType(String extension) {
+        return switch (extension) { case "wav" -> "audio/wav"; case "mp3" -> "audio/mpeg"; case "pcm" -> "audio/L16"; default -> "audio/ogg"; };
+    }
+    private static String safeFileName(String value, String fallback) {
+        if (value == null || value.isBlank()) return fallback;
+        String sanitized = Path.of(value).getFileName().toString().replaceAll("[^\\p{IsHan}A-Za-z0-9._-]", "_");
+        return sanitized.isBlank() ? fallback : sanitized.substring(0, Math.min(sanitized.length(), 200));
     }
     private static Long estimatedPcmDuration(byte[] audio, String format, Map<String, Object> metadata) {
         if (!Set.of("wav", "pcm").contains(format)) return null;

@@ -89,6 +89,19 @@ class SeedAudioGenerationProviderTests {
         assertEquals("AUDIO_INVALID_PARAMETERS", exception.getCode());
     }
 
+    @Test
+    void allowsAutomaticVoiceGenerationWithoutSpeakerOrReferenceAudio() throws Exception {
+        var command = new AudioGenerationProvider.AudioGenerationCommand(
+                "request-auto", "seed-audio-1.0", "我会找到你的。", "",
+                new AudioGenerationProvider.VoiceDirection("坚定、克制", 1d, 1d, Map.of()), "wav", Map.of());
+
+        provider().generate(command);
+
+        JsonNode body = mapper.readTree(requestBody.get());
+        assertTrue(body.path("references").isMissingNode());
+        assertTrue(body.path("text_prompt").asText().contains("我会找到你的。"));
+    }
+
     private SeedAudioGenerationProvider provider() {
         SeedAudioProperties properties = new SeedAudioProperties();
         properties.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());

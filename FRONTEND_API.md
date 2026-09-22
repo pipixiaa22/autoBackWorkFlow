@@ -214,14 +214,19 @@
 | providerId | number | 是 | 启用的音频 Provider ID |
 | modelId | number | 是 | 且必须属于该 Provider 的启用模型 |
 | segmentIds | number[] | 是 | 至少一个，且均属于该项目 |
-| voiceId | string | 是 | 非空音色 ID |
+| voiceId | string | 否 | 可选音色 ID；不传且没有参考音频时，由 SeedAudio 根据 `text_prompt` 自动生成声音。 |
+| referenceAudioAssetIds | number[] | 否 | 通过参考音频上传接口获得的资产 ID，最多 3 个；与 `voiceId`、`referenceAudioData`、`referenceAudioUrl`、图片参考参数互斥。 |
 | parameters | object | 否 | Provider 参数；常用 `format`、`instruction`、`speed`、`volume`、`emotion` |
 
 ```json
-{"providerId":2,"modelId":3,"segmentIds":[101,102],"voiceId":"zh_female_xiaomei","parameters":{"format":"wav","speed":1.0,"volume":1.0,"instruction":"自然、清晰"}}
+{"providerId":2,"modelId":3,"segmentIds":[101,102],"referenceAudioAssetIds":[301],"parameters":{"format":"wav","speed":1.0,"volume":1.0,"instruction":"自然、清晰"}}
 ```
 
 立即返回 `GenerationTask`（初始 `PENDING`），后台异步执行。分段自己的 `voiceDirection`、`speed`、`volume`、`emotionJson` 会在同名参数未传时自动补入子任务。
+
+### 上传参考音频
+
+`POST /projects/{projectId}/audio-reference-assets`，使用 `multipart/form-data`，字段名为 `file`。支持 wav、mp3、pcm、ogg，最大 10 MB；返回 `AudioAsset`。将返回的 `id` 放进创建任务请求的 `referenceAudioAssetIds`。参考音频资产只保存一份，生成时才转换为 SeedAudio 所需的 Base64 数据，不会重复写入每个子任务。
 
 ### 轮询、取消与重试
 
