@@ -2,6 +2,7 @@ package com.ckrey.autobackworkflow.export.application;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.ckrey.autobackworkflow.common.exception.BizException;
+import com.ckrey.autobackworkflow.common.api.CursorPage;
 import com.ckrey.autobackworkflow.common.util.Hashing;
 import com.ckrey.autobackworkflow.domain.AdsAudioAsset;
 import com.ckrey.autobackworkflow.domain.AdsDialogueSegment;
@@ -36,6 +37,20 @@ public class ExportApplicationService {
     @Transactional public AdsExportRecord exportSrt(Long projectId,String idempotencyKey) { return export(projectId,"SRT",idempotencyKey,false); }
     @Transactional public AdsExportRecord exportPackage(Long projectId,String idempotencyKey) { return export(projectId,"PACKAGE",idempotencyKey,true); }
     public AdsExportRecord required(Long id) { AdsExportRecord v=exports.getById(id);if(v==null)throw BizException.notFound("EXPORT_NOT_FOUND","导出记录不存在");return v; }
+    public CursorPage<AdsExportRecord> list(Long projectId, String cursor, Integer requestedLimit) {
+        projects.required(projectId);
+        int limit = CursorPage.limit(requestedLimit);
+        CursorPage.Cursor anchor = CursorPage.decode(cursor);
+        var query = Wrappers.<AdsExportRecord>lambdaQuery().eq(AdsExportRecord::getProjectId, projectId);
+        if (anchor != null) {
+            query.and(group -> group.lt(AdsExportRecord::getCreatedAt, anchor.createdAt())
+                    .or(tie -> tie.eq(AdsExportRecord::getCreatedAt, anchor.createdAt())
+                            .lt(AdsExportRecord::getId, anchor.id())));
+        }
+        List<AdsExportRecord> rows = exports.list(query.orderByDesc(AdsExportRecord::getCreatedAt)
+                .orderByDesc(AdsExportRecord::getId).last("LIMIT " + (limit + 1)));
+        return CursorPage.from(rows, limit, AdsExportRecord::getCreatedAt, AdsExportRecord::getId);
+    }
     public Resource download(Long id) { AdsExportRecord record=required(id); if(!"SUCCEEDED".equals(record.getStatus()))throw BizException.badRequest("EXPORT_NOT_READY","导出文件尚未就绪");Path path=resolve(record.getObjectKey());if(!Files.isRegularFile(path))throw BizException.notFound("EXPORT_FILE_MISSING","导出文件不存在或已过期");return new FileSystemResource(path); }
     private AdsExportRecord export(Long projectId,String type,String key,boolean packageExport) { AdsProject project=projects.required(projectId); if(key!=null&&!key.isBlank()){AdsExportRecord existing=exports.getOne(Wrappers.<AdsExportRecord>lambdaQuery().eq(AdsExportRecord::getProjectId,projectId).eq(AdsExportRecord::getExportType,type).eq(AdsExportRecord::getIdempotencyKey,key));if(existing!=null)return existing;}
         List<AdsDialogueSegment> dialogue=segments.list(Wrappers.<AdsDialogueSegment>lambdaQuery().eq(AdsDialogueSegment::getProjectId,projectId).eq(AdsDialogueSegment::getDeleted,0).orderByAsc(AdsDialogueSegment::getSegmentNo));if(dialogue.isEmpty())throw BizException.badRequest("EXPORT_NO_SEGMENTS","项目尚无可导出的台词分段");

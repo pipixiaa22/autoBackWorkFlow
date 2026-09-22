@@ -5,6 +5,7 @@ import com.ckrey.autobackworkflow.audio.api.AudioDtos;
 import com.ckrey.autobackworkflow.audio.provider.AudioGenerationProvider;
 import com.ckrey.autobackworkflow.audio.provider.AudioProviderRegistry;
 import com.ckrey.autobackworkflow.common.exception.BizException;
+import com.ckrey.autobackworkflow.common.api.CursorPage;
 import com.ckrey.autobackworkflow.common.util.Hashing;
 import com.ckrey.autobackworkflow.domain.*;
 import com.ckrey.autobackworkflow.project.application.ProjectApplicationService;
@@ -20,6 +21,8 @@ import java.util.*;
 import java.util.concurrent.Executor;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -125,9 +128,39 @@ public class AudioTaskApplicationService {
         return t;
     }
 
+    public CursorPage<AdsGenerationTask> list(Long projectId, String cursor, Integer requestedLimit) {
+        projects.required(projectId);
+        int limit = CursorPage.limit(requestedLimit);
+        CursorPage.Cursor anchor = CursorPage.decode(cursor);
+        var query = Wrappers.<AdsGenerationTask>lambdaQuery().eq(AdsGenerationTask::getProjectId, projectId);
+        if (anchor != null) {
+            query.and(group -> group.lt(AdsGenerationTask::getCreatedAt, anchor.createdAt())
+                    .or(tie -> tie.eq(AdsGenerationTask::getCreatedAt, anchor.createdAt())
+                            .lt(AdsGenerationTask::getId, anchor.id())));
+        }
+        List<AdsGenerationTask> rows = tasks.list(query.orderByDesc(AdsGenerationTask::getCreatedAt)
+                .orderByDesc(AdsGenerationTask::getId).last("LIMIT " + (limit + 1)));
+        return CursorPage.from(rows, limit, AdsGenerationTask::getCreatedAt, AdsGenerationTask::getId);
+    }
+
     public List<AdsGenerationItem> itemList(Long id) {
         get(id);
         return items.list(Wrappers.<AdsGenerationItem>lambdaQuery().eq(AdsGenerationItem::getTaskId, id).orderByAsc(AdsGenerationItem::getItemNo));
+    }
+
+    public AdsAudioAsset asset(Long id) {
+        AdsAudioAsset asset = assets.getOne(Wrappers.<AdsAudioAsset>lambdaQuery().eq(AdsAudioAsset::getId, id)
+                .eq(AdsAudioAsset::getDeleted, 0));
+        if (asset == null) throw BizException.notFound("AUDIO_ASSET_NOT_FOUND", "音频资产不存在");
+        return asset;
+    }
+
+    public Resource downloadAsset(Long id) {
+        AdsAudioAsset asset = asset(id);
+        Path path = root.resolve(asset.getObjectKey()).normalize();
+        if (!path.startsWith(root)) throw BizException.badRequest("AUDIO_ASSET_INVALID_PATH", "音频资产路径不合法");
+        if (!Files.isRegularFile(path)) throw BizException.notFound("AUDIO_ASSET_FILE_MISSING", "音频资产文件不存在或已过期");
+        return new FileSystemResource(path);
     }
 
     @Transactional
@@ -182,7 +215,7 @@ public class AudioTaskApplicationService {
             String format = stringParameter(parameters, "format", "wav");
             AudioGenerationProvider.VoiceDirection direction = new AudioGenerationProvider.VoiceDirection(
                     stringParameter(parameters, "instruction", null), doubleParameter(parameters, "speed", 1d),
-                    doubleParameter(parameters, "volume", 1d), mapParameter(parameters.get("emotion")));
+                    doubleParameter(parameters, "volume", 1d), AudioTaskParameters.emotion(parameters.get("emotion"), mapper));
             AudioGenerationProvider.AudioGenerationResult result = provider.generate(new AudioGenerationProvider.AudioGenerationCommand(
                     item.getRequestHash(), task.getModelCodeSnapshot(), item.getTextSnapshot(), item.getVoiceId(), direction, format, parameters));
             String extension = extension(result.mediaType(), format);
@@ -271,10 +304,6 @@ public class AudioTaskApplicationService {
     }
     private static Double doubleParameter(Map<String, Object> values, String key, Double fallback) {
         Object value = values.get(key); return value instanceof Number number ? number.doubleValue() : fallback;
-    }
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> mapParameter(Object value) {
-        return value instanceof Map<?, ?> map ? (Map<String, Object>) map : Map.of();
     }
     private static String extension(String mediaType, String fallback) {
         if ("audio/mpeg".equalsIgnoreCase(mediaType)) return "mp3";

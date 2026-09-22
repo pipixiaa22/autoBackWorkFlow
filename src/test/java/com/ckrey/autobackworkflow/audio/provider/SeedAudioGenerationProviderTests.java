@@ -58,7 +58,8 @@ class SeedAudioGenerationProviderTests {
         SeedAudioGenerationProvider provider = provider();
         var command = new AudioGenerationProvider.AudioGenerationCommand(
                 "request-123", "seed-audio-1.0", "晚安", "speaker-1",
-                new AudioGenerationProvider.VoiceDirection("温暖、平静", 0.8, 1.2, Map.of()),
+                new AudioGenerationProvider.VoiceDirection("温暖、平静", 0.8, 1.2,
+                        Map.of("primary", "悲伤", "secondary", "克制", "intensity", 0.8)),
                 "mp3", Map.of("sampleRate", 44100, "enableSubtitle", true));
 
         var result = provider.generate(command);
@@ -75,6 +76,7 @@ class SeedAudioGenerationProviderTests {
         assertEquals(20, body.at("/audio_config/loudness_rate").asInt());
         assertEquals(44100, body.at("/audio_config/sample_rate").asInt());
         assertTrue(body.path("text_prompt").asText().contains("待生成台词：晚安"));
+        assertTrue(body.path("text_prompt").asText().contains("情绪要求：悲伤，带有克制（强度 0.80）"));
     }
 
     @Test

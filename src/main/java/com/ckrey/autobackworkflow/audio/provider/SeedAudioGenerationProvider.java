@@ -206,7 +206,9 @@ public class SeedAudioGenerationProvider implements AudioGenerationProvider {
     private ValidatedRequest validate(AudioGenerationCommand command) {
         if (command == null || command.text() == null || command.text().isBlank()) throw invalidRequest("待生成台词不能为空");
         String instruction = command.direction() == null ? null : command.direction().instruction();
-        String prompt = blank(instruction) ? command.text() : instruction.trim() + "\n待生成台词：" + command.text();
+        String emotionPrompt = emotionPrompt(command.direction() == null ? Map.of() : command.direction().emotion());
+        String directionPrompt = joinPrompt(instruction, emotionPrompt);
+        String prompt = blank(directionPrompt) ? command.text() : directionPrompt + "\n待生成台词：" + command.text();
         if (prompt.length() > MAX_PROMPT_LENGTH) throw invalidRequest("SeedAudio 提示词不能超过 3000 字符");
         String format = valueOrDefault(command.format(), "wav").toLowerCase(Locale.ROOT);
         if (!FORMATS.contains(format)) throw invalidRequest("不支持的音频格式: " + format);
@@ -216,6 +218,37 @@ public class SeedAudioGenerationProvider implements AudioGenerationProvider {
         factorToRate(command.direction() == null ? null : command.direction().speed(), "speed");
         factorToRate(command.direction() == null ? null : command.direction().volume(), "volume");
         return new ValidatedRequest(prompt, format, sampleRate);
+    }
+
+    private static String joinPrompt(String instruction, String emotion) {
+        if (blank(instruction)) return emotion;
+        if (blank(emotion)) return instruction.trim();
+        return instruction.trim() + "\n" + emotion;
+    }
+
+    private static String emotionPrompt(Map<String, Object> emotion) {
+        if (emotion == null || emotion.isEmpty()) return null;
+        String primary = promptText(emotion.get("primary"));
+        if (primary == null) return null;
+        String secondary = promptText(emotion.get("secondary"));
+        Double intensity = decimal(emotion.get("intensity"));
+        StringBuilder prompt = new StringBuilder("情绪要求：").append(primary);
+        if (secondary != null) prompt.append("，带有").append(secondary);
+        if (intensity != null) prompt.append("（强度 ").append(String.format(Locale.ROOT, "%.2f", intensity)).append("）");
+        prompt.append("。请在不改变台词内容的前提下自然表达。");
+        return prompt.toString();
+    }
+
+    private static String promptText(Object value) {
+        if (!(value instanceof String text)) return null;
+        String normalized = text.replaceAll("[\\r\\n\\t]", " ").trim();
+        if (normalized.isEmpty()) return null;
+        return normalized.length() > 80 ? normalized.substring(0, 80) : normalized;
+    }
+
+    private static Double decimal(Object value) {
+        if (!(value instanceof Number number) || !Double.isFinite(number.doubleValue())) return null;
+        return Math.max(0d, Math.min(1d, number.doubleValue()));
     }
 
     private void validateReferenceUrl(String value) {

@@ -32,6 +32,8 @@ public class DeepSeekLlmProvider implements LlmProvider {
             voiceDirection,rewriteMode,rewriteLevel,rewriteReason。emotion 必须包含 primary,secondary,intensity。
             sourceStart/sourceEnd 是原始台词 Java UTF-16 字符串中的左闭右开索引，originalText 必须等于该区间原文。
             segmentNo 从 1 连续递增；speed、volume 范围 0.5 到 2.0；emotion.intensity 范围 0 到 1；停顿使用非负毫秒。
+            为 SeedAudio 合成优化：spokenText 最多 2400 个字符；emotion.primary 使用中文情绪词（如平静、喜悦、悲伤、愤怒、紧张、恐惧、惊讶、温柔）；
+            voiceDirection 使用不超过 400 字的中文可执行描述，包含语气、情绪和强度，但不得改写 spokenText。
             不得添加 JSON Schema 之外的字段。
             """;
 
@@ -153,8 +155,8 @@ public class DeepSeekLlmProvider implements LlmProvider {
             if (item == null || item.segmentNo() != index + 1) invalidOutput("分段编号必须从 1 连续递增");
             if (blank(item.speaker()) || blank(item.originalText()) || blank(item.spokenText())
                     || blank(item.subtitleText()) || blank(item.voiceDirection())) invalidOutput("分析结果存在空的必填字段");
-            if (item.speaker().length() > 120 || item.voiceDirection().length() > 1_000
-                    || item.spokenText().length() > 3_000) invalidOutput("分析结果字段长度超出限制");
+            if (item.speaker().length() > 120 || item.voiceDirection().length() > 400
+                    || item.spokenText().length() > 2_400) invalidOutput("分析结果字段长度超出 SeedAudio 限制");
             if (item.sourceStart() < previousEnd || item.sourceEnd() <= item.sourceStart()
                     || item.sourceEnd() > command.originalDialogue().length()) invalidOutput("原文索引不合法或重叠");
             if (!command.originalDialogue().substring(item.sourceStart(), item.sourceEnd()).equals(item.originalText()))

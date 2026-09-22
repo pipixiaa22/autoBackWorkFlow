@@ -6,6 +6,7 @@ import com.ckrey.autobackworkflow.ai.llm.LlmProvider;
 import com.ckrey.autobackworkflow.ai.llm.LlmProviderRegistry;
 import com.ckrey.autobackworkflow.ai.model.AnalysisCandidate;
 import com.ckrey.autobackworkflow.common.exception.BizException;
+import com.ckrey.autobackworkflow.common.api.CursorPage;
 import com.ckrey.autobackworkflow.common.util.Hashing;
 import com.ckrey.autobackworkflow.domain.AdsAnalysisRun;
 import com.ckrey.autobackworkflow.domain.AdsDialogueSegment;
@@ -22,7 +23,10 @@ import com.ckrey.autobackworkflow.skill.application.SkillApplicationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,9 +46,12 @@ public class AnalysisApplicationService {
     @Transactional public AdsAnalysisRun create(Long projectId, AnalysisDtos.CreateAnalysisRequest request) {
         AdsProject project = projects.required(projectId); AdsSkillVersion skill = skills.published(request.skillVersionId()); Date now = new Date();
         SelectedLlm selected = selectProvider(request.providerId(), request.modelId());
-        AdsAnalysisRun run = new AdsAnalysisRun(); run.setRunNo("AN-"+UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase()); run.setProjectId(projectId); run.setProjectVersion(project.getVersion()); run.setSkillVersionId(skill.getId()); run.setProviderId(request.providerId()); run.setModelId(request.modelId()); run.setProviderCodeSnapshot(selected.provider().providerCode()); run.setModelCodeSnapshot(selected.modelCode()); run.setRewriteMode(request.rewriteMode() == null ? "STRICT" : request.rewriteMode()); run.setBackgroundSnapshot(project.getStoryBackground()); run.setDialogueSnapshot(project.getOriginalDialogue()); run.setInputHash(Hashing.sha256((project.getStoryBackground()==null?"":project.getStoryBackground())+"\n"+project.getOriginalDialogue())); run.setPromptHash(Hashing.sha256(skill.getSystemPromptTemplate())); run.setModelParametersJson(skill.getModelParametersJson()); run.setStatus("RUNNING"); run.setVersion(1); run.setCreatedAt(now); run.setUpdatedAt(now); run.setStartedAt(now); runs.save(run);
+        boolean local = request.providerId() == null && request.modelId() == null;
+        validateMode(project.getOutputMode(), local);
+        Map<String, Object> localRules = local ? resolvedLocalRules(skill.getSplitRulesJson(), request.localRules()) : Map.of();
+        AdsAnalysisRun run = new AdsAnalysisRun(); run.setRunNo("AN-"+UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase()); run.setProjectId(projectId); run.setProjectVersion(project.getVersion()); run.setSkillVersionId(skill.getId()); run.setProviderId(request.providerId()); run.setModelId(request.modelId()); run.setProviderCodeSnapshot(selected.provider().providerCode()); run.setModelCodeSnapshot(selected.modelCode()); run.setRewriteMode(request.rewriteMode() == null ? "STRICT" : request.rewriteMode()); run.setBackgroundSnapshot(project.getStoryBackground()); run.setDialogueSnapshot(project.getOriginalDialogue()); run.setInputHash(Hashing.sha256((project.getStoryBackground()==null?"":project.getStoryBackground())+"\n"+project.getOriginalDialogue())); run.setPromptHash(Hashing.sha256(skill.getSystemPromptTemplate())); run.setModelParametersJson(local ? Hashing.json(Map.of("localRules", localRules)) : skill.getModelParametersJson()); run.setStatus("RUNNING"); run.setVersion(1); run.setCreatedAt(now); run.setUpdatedAt(now); run.setStartedAt(now); runs.save(run);
         try {
-            AnalysisCandidate candidate = selected.provider().analyse(new LlmProvider.LlmAnalysisCommand(project.getStoryBackground(), project.getOriginalDialogue(), run.getRewriteMode(), skill.getSystemPromptTemplate(), selected.modelCode()));
+            AnalysisCandidate candidate = selected.provider().analyse(new LlmProvider.LlmAnalysisCommand(project.getStoryBackground(), project.getOriginalDialogue(), run.getRewriteMode(), skill.getSystemPromptTemplate(), selected.modelCode(), localRules));
             if(candidate.segments().isEmpty()) throw BizException.badRequest("SKILL_INVALID_OUTPUT", "分析结果未包含可用台词分段");
             run.setRawResponseJson(Hashing.json(candidate)); run.setCandidateResultJson(Hashing.json(candidate)); run.setValidationWarningsJson("[]"); run.setStatus("SUCCEEDED"); run.setFinishedAt(new Date()); run.setUpdatedAt(new Date()); runs.updateById(run);
         } catch (RuntimeException ex) {
@@ -53,6 +60,21 @@ public class AnalysisApplicationService {
         return required(projectId, run.getId());
     }
     public AdsAnalysisRun get(Long projectId, Long runId) { return required(projectId, runId); }
+
+    public CursorPage<AdsAnalysisRun> list(Long projectId, String cursor, Integer requestedLimit) {
+        projects.required(projectId);
+        int limit = CursorPage.limit(requestedLimit);
+        CursorPage.Cursor anchor = CursorPage.decode(cursor);
+        var query = Wrappers.<AdsAnalysisRun>lambdaQuery().eq(AdsAnalysisRun::getProjectId, projectId);
+        if (anchor != null) {
+            query.and(group -> group.lt(AdsAnalysisRun::getCreatedAt, anchor.createdAt())
+                    .or(tie -> tie.eq(AdsAnalysisRun::getCreatedAt, anchor.createdAt())
+                            .lt(AdsAnalysisRun::getId, anchor.id())));
+        }
+        List<AdsAnalysisRun> rows = runs.list(query.orderByDesc(AdsAnalysisRun::getCreatedAt)
+                .orderByDesc(AdsAnalysisRun::getId).last("LIMIT " + (limit + 1)));
+        return CursorPage.from(rows, limit, AdsAnalysisRun::getCreatedAt, AdsAnalysisRun::getId);
+    }
     @Transactional public List<AdsDialogueSegment> apply(Long projectId, Long runId, AnalysisDtos.ApplyAnalysisRequest request) {
         AdsProject project = projects.required(projectId); AdsAnalysisRun run = required(projectId,runId);
         if (!"SUCCEEDED".equals(run.getStatus())) throw BizException.badRequest("SKILL_RUN_NOT_READY", "仅成功的分析运行可以应用");
@@ -74,6 +96,31 @@ public class AnalysisApplicationService {
             throw BizException.badRequest("PROVIDER_INVALID_MODEL", "LLM Provider 或模型不可用");
         }
         return new SelectedLlm(llmProviders.getRequired(provider.getProviderCode()), model.getModelCode());
+    }
+    private void validateMode(String outputMode, boolean local) {
+        if (!Set.of("JIAN_YING_TTS", "EXTERNAL_AUDIO").contains(outputMode)) {
+            throw BizException.badRequest("PROJECT_INVALID_OUTPUT_MODE", "项目输出模式不合法");
+        }
+        if ("JIAN_YING_TTS".equals(outputMode) && !local) {
+            throw BizException.badRequest("ANALYSIS_MODE_MISMATCH", "剪映 TTS 项目只能使用本地规则分段");
+        }
+        if ("EXTERNAL_AUDIO".equals(outputMode) && local) {
+            throw BizException.badRequest("ANALYSIS_MODE_MISMATCH", "外部 AI 音频项目必须指定 LLM Provider 和模型");
+        }
+    }
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> resolvedLocalRules(Object skillRules, Map<String, Object> requestRules) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (skillRules != null) {
+            try {
+                Object decoded = skillRules instanceof String text ? mapper.readValue(text, Map.class) : skillRules;
+                if (decoded instanceof Map<?, ?> values) values.forEach((key, value) -> result.put(String.valueOf(key), value));
+            } catch (Exception ex) {
+                throw BizException.badRequest("SKILL_INVALID_RULES", "Skill 的本地分段规则无法读取");
+            }
+        }
+        if (requestRules != null) result.putAll(requestRules);
+        return result;
     }
     private AdsAnalysisRun required(Long projectId, Long runId) { AdsAnalysisRun run=runs.getOne(Wrappers.<AdsAnalysisRun>lambdaQuery().eq(AdsAnalysisRun::getId,runId).eq(AdsAnalysisRun::getProjectId,projectId)); if(run==null) throw BizException.notFound("SKILL_RUN_NOT_FOUND", "分析运行不存在"); return run; }
     private AdsDialogueSegment toSegment(Long projectId, Long runId, AnalysisCandidate.CandidateSegment item, Date now) { AdsDialogueSegment v=new AdsDialogueSegment(); v.setProjectId(projectId);v.setSegmentNo(item.segmentNo());v.setSpeakerNameSnapshot(item.speaker());v.setSemanticGroup(item.semanticGroup());v.setSourceStart(item.sourceStart());v.setSourceEnd(item.sourceEnd());v.setOriginalText(item.originalText());v.setSpokenText(item.spokenText());v.setSubtitleText(item.subtitleText());v.setEmotionJson(Hashing.json(item.emotion()));v.setToneJson(Hashing.json(item.tone()));v.setSpeed(item.speed());v.setVolume(item.volume());v.setPauseBeforeMs(item.pauseBeforeMs());v.setPauseAfterMs(item.pauseAfterMs());v.setEmphasisJson(Hashing.json(item.emphasis()));v.setVoiceDirection(item.voiceDirection());v.setRewriteMode(item.rewriteMode());v.setRewriteLevel(item.rewriteLevel());v.setRewriteReason(item.rewriteReason());v.setManualEdited(0);v.setAudioStale(1);v.setAnalysisRunId(runId);v.setVersion(1);v.setCreatedAt(now);v.setUpdatedAt(now);v.setDeleted(0);return v; }

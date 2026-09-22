@@ -73,6 +73,14 @@
 
 成功后版本自动加 1；版本不符返回 `PROJECT_VERSION_CONFLICT`（409）。
 
+### 回收站
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| DELETE | `/projects/{id}?version=1` | 以乐观锁将项目放入回收站；关联分段、任务和导出数据保留。 |
+| GET | `/projects/trash?cursor=&limit=20` | 返回 `{ items: Project[], nextCursor, hasMore }`，按删除时间倒序。 |
+| POST | `/projects/{id}/restore` | 从回收站恢复项目；成功后项目版本加 1。 |
+
 ## Skill
 
 ### Skill 列表与版本
@@ -117,15 +125,26 @@
 | rewriteMode | string | 否 | 改写模式；默认 `STRICT` |
 | providerId | number | 否 | LLM Provider ID；与 `modelId` 必须同时传或同时不传 |
 | modelId | number | 否 | LLM 模型 ID；不传二者时使用本地规则 Provider |
+| localRules | object | 否 | 仅本地规则可用；覆盖 Skill 版本的分段规则。支持 `maxChars`（1–500）、`punctuation`、`splitOnNewline`、`minChars`。实际规则会随分析运行快照保存。 |
 
-接口在当前实现中同步执行分析，但仍建议以返回的 `status` 判断结果。正常完成为 `SUCCEEDED`，失败记录为 `FAILED`；Provider/模型不匹配返回 `PROVIDER_INVALID_MODEL`。
+接口在当前实现中同步执行分析，但仍建议以返回的 `status` 判断结果。正常完成为 `SUCCEEDED`，失败记录为 `FAILED`；Provider/模型不匹配返回 `PROVIDER_INVALID_MODEL`。`JIAN_YING_TTS` 项目只能省略 Provider/模型并使用本地规则；`EXTERNAL_AUDIO` 项目必须同时指定二者。
 
 ### 查询与应用分析
 
 | 方法 | 路径 | 请求体 | 说明 |
 | --- | --- | --- | --- |
-| GET | `/projects/{projectId}/analysis-runs/{runId}` | 无 | 返回 `AnalysisRun`，包含候选结果 `candidateResultJson` |
+| GET | `/projects/{projectId}/analysis-runs/{runId}` | 无 | 返回 `AnalysisRunView`，包含候选结果 `candidateResultJson`。原始供应商响应和完整输入快照只保留在服务端。 |
 | POST | `/projects/{projectId}/analysis-runs/{runId}/apply` | `{ "projectVersion": 1 }` | 将分析结果替换为正式分段，返回 `DialogueSegment[]` |
+
+### 项目历史
+
+以下三个接口用于在重新进入项目后恢复任务、导出和分析状态。它们都按 `createdAt`、`id` 倒序返回，默认 `limit=20`，最大为 100。将响应中的 `nextCursor` 传回 `cursor` 可继续翻页。
+
+| 方法 | 路径 | 返回 |
+| --- | --- | --- |
+| GET | `/projects/{projectId}/analysis-runs?cursor=&limit=20` | `{ items: AnalysisRunView[], nextCursor, hasMore }` |
+| GET | `/projects/{projectId}/audio-tasks?cursor=&limit=20` | `{ items: GenerationTask[], nextCursor, hasMore }` |
+| GET | `/projects/{projectId}/exports?cursor=&limit=20` | `{ items: ExportRecord[], nextCursor, hasMore }` |
 
 仅 `SUCCEEDED` 的运行可应用。应用要求项目版本与运行时快照一致，且项目不存在人工编辑的分段；否则分别返回 `PROJECT_VERSION_CONFLICT` 或 `DIALOGUE_MANUAL_EDIT_CONFLICT`（409）。成功后运行状态为 `APPLIED`。
 
@@ -211,6 +230,17 @@
 | GET | `/audio-tasks/{id}` | `{ "task": GenerationTask, "items": GenerationItem[] }` |
 | POST | `/audio-tasks/{id}/cancel` | 请求取消；终态任务直接原样返回 |
 | POST | `/audio-items/{id}/retry` | 仅 `FAILED` 子任务可重试，返回重新置为 `WAITING` 的 `GenerationItem` |
+
+### 音频资产试听与下载
+
+`GenerationItem.audioAssetId` 指向成功生成的音频资产。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/audio-assets/{id}` | 返回 `AudioAsset` 元数据。 |
+| GET | `/audio-assets/{id}/download` | 直接返回音频二进制，带媒体类型，可用作 `<audio>` 的 `src`。 |
+
+当分段包含 `emotion: { primary, secondary, intensity }` 时，服务端会将其转换为 SeedAudio 的中文 `text_prompt` 情绪要求，并和 `voiceDirection`、台词一并发送；`intensity` 会规范化到 0–1。
 
 任务状态：`PENDING`、`RUNNING`、`CANCEL_REQUESTED`、`SUCCEEDED`、`PARTIAL_SUCCESS`、`FAILED`、`CANCELLED`。子任务状态：`WAITING`、`GENERATING`、`SUCCESS`、`FAILED`。建议每 1–2 秒轮询，直到任务为终态。
 
@@ -316,9 +346,9 @@
 - `Skill`：`id, skillCode, name, description, taskType, enabled, version, createdAt, updatedAt`
 - `SkillVersion`：`id, skillId, versionNo, status, systemPromptTemplate, inputSchemaJson, outputSchemaJson, splitRulesJson, rewriteRulesJson, modelParametersJson, contentHash, publishedAt, version, createdAt, updatedAt`
 
-### AnalysisRun
+### AnalysisRunView
 
-`id, runNo, projectId, projectVersion, skillVersionId, providerId, modelId, providerCodeSnapshot, modelCodeSnapshot, rewriteMode, backgroundSnapshot, dialogueSnapshot, modelParametersJson, status, rawResponseJson, candidateResultJson, validationWarningsJson, errorCode, errorMessage, startedAt, finishedAt, appliedAt, version, createdAt, updatedAt`。
+`id, runNo, projectId, projectVersion, skillVersionId, providerId, modelId, providerCodeSnapshot, modelCodeSnapshot, rewriteMode, status, candidateResultJson, validationWarningsJson, errorCode, errorMessage, startedAt, finishedAt, appliedAt, version, createdAt, updatedAt`。原始供应商响应、完整输入快照与模型参数仅留在服务端的 `AdsAnalysisRun` 审计记录中。
 
 候选结果结构为：`{ "segments": [{ "segmentNo": 1, "speaker": "", "sourceStart": 0, "sourceEnd": 10, "originalText": "", "spokenText": "", "subtitleText": "", "semanticGroup": "", "emotion": {"primary":"", "secondary":"", "intensity":0.5}, "tone": [], "speed": 1.0, "volume": 1.0, "pauseBeforeMs": 0, "pauseAfterMs": 0, "emphasis": [], "voiceDirection": "", "rewriteMode": "", "rewriteLevel": "", "rewriteReason": "" }] }`。
 
