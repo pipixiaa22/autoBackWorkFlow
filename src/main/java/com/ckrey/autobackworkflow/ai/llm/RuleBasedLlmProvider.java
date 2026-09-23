@@ -2,21 +2,31 @@ package com.ckrey.autobackworkflow.ai.llm;
 
 import com.ckrey.autobackworkflow.ai.model.AnalysisCandidate;
 import com.ckrey.autobackworkflow.common.exception.BizException;
+
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+
 import org.springframework.stereotype.Component;
 
-/** Safe development fallback: it never invents or rewrites dialogue. */
+/**
+ * Safe development fallback: it never invents or rewrites dialogue.
+ */
 @Component
 public class RuleBasedLlmProvider implements LlmProvider {
-    @Override public String providerCode() { return "local-rule"; }
-    @Override public AnalysisCandidate analyse(LlmAnalysisCommand command) {
+    @Override
+    public String providerCode() {
+        return "local-rule";
+    }
+
+    @Override
+    public AnalysisCandidate analyse(LlmAnalysisCommand command) {
         String source = command.originalDialogue();
         Rules rules = Rules.from(command.localRules());
         List<AnalysisCandidate.CandidateSegment> result = new ArrayList<>();
-        int start = 0; int no = 1;
+        int start = 0;
+        int no = 1;
         for (int i = 0; i < source.length(); i++) {
             char current = source.charAt(i);
             boolean boundary = rules.punctuation().indexOf(current) >= 0
@@ -29,6 +39,7 @@ public class RuleBasedLlmProvider implements LlmProvider {
         append(source, start, source.length(), no, command.rewriteMode(), result);
         return new AnalysisCandidate(List.copyOf(mergeShortSegments(result, source, rules.minChars())));
     }
+
     private int append(String source, int rawStart, int rawEnd, int no, String rewriteMode,
                        List<AnalysisCandidate.CandidateSegment> target) {
         int start = rawStart, end = rawEnd;

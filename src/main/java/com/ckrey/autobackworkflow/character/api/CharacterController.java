@@ -4,7 +4,9 @@ import com.ckrey.autobackworkflow.character.application.CharacterApplicationServ
 import com.ckrey.autobackworkflow.common.api.ApiResponse;
 import com.ckrey.autobackworkflow.domain.AdsCharacter;
 import jakarta.validation.Valid;
+
 import java.util.List;
+
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -19,10 +21,15 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1")
 public class CharacterController {
     private final CharacterApplicationService characters;
-    public CharacterController(CharacterApplicationService characters) { this.characters = characters; }
+
+    public CharacterController(CharacterApplicationService characters) {
+        this.characters = characters;
+    }
 
     @GetMapping("/projects/{projectId}/characters")
-    public ApiResponse<List<AdsCharacter>> list(@PathVariable Long projectId) { return ApiResponse.ok(characters.list(projectId)); }
+    public ApiResponse<List<AdsCharacter>> list(@PathVariable Long projectId) {
+        return ApiResponse.ok(characters.list(projectId));
+    }
 
     @PostMapping("/projects/{projectId}/characters")
     public ApiResponse<AdsCharacter> create(@PathVariable Long projectId, @Valid @RequestBody CharacterDtos.CreateCharacterRequest request) {
@@ -35,5 +42,8 @@ public class CharacterController {
     }
 
     @DeleteMapping("/characters/{id}")
-    public ApiResponse<Void> delete(@PathVariable Long id, @RequestParam Integer version) { characters.delete(id, version); return ApiResponse.ok(null); }
+    public ApiResponse<Void> delete(@PathVariable Long id, @RequestParam Integer version) {
+        characters.delete(id, version);
+        return ApiResponse.ok(null);
+    }
 }

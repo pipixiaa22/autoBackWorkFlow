@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -20,6 +21,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -53,7 +55,10 @@ public class SeedAudioGenerationProvider implements AudioGenerationProvider {
         this.http = http;
     }
 
-    @Override public String providerCode() { return "seed-audio"; }
+    @Override
+    public String providerCode() {
+        return "seed-audio";
+    }
 
     @Override
     public ProviderCapabilities capabilities() {
@@ -204,7 +209,8 @@ public class SeedAudioGenerationProvider implements AudioGenerationProvider {
     }
 
     private ValidatedRequest validate(AudioGenerationCommand command) {
-        if (command == null || command.text() == null || command.text().isBlank()) throw invalidRequest("待生成台词不能为空");
+        if (command == null || command.text() == null || command.text().isBlank())
+            throw invalidRequest("待生成台词不能为空");
         String instruction = command.direction() == null ? null : command.direction().instruction();
         String emotionPrompt = emotionPrompt(command.direction() == null ? Map.of() : command.direction().emotion());
         String directionPrompt = joinPrompt(instruction, emotionPrompt);
@@ -214,7 +220,8 @@ public class SeedAudioGenerationProvider implements AudioGenerationProvider {
         if (!FORMATS.contains(format)) throw invalidRequest("不支持的音频格式: " + format);
         int defaultRate = "ogg_opus".equals(format) ? 48000 : "mp3".equals(format) ? 44100 : 40000;
         int sampleRate = intExtension(command.extensions(), "sampleRate", defaultRate, 8000, 48000);
-        if (!SAMPLE_RATES.get(format).contains(sampleRate)) throw invalidRequest(format + " 不支持采样率 " + sampleRate);
+        if (!SAMPLE_RATES.get(format).contains(sampleRate))
+            throw invalidRequest(format + " 不支持采样率 " + sampleRate);
         factorToRate(command.direction() == null ? null : command.direction().speed(), "speed");
         factorToRate(command.direction() == null ? null : command.direction().volume(), "volume");
         return new ValidatedRequest(prompt, format, sampleRate);
@@ -234,7 +241,8 @@ public class SeedAudioGenerationProvider implements AudioGenerationProvider {
         Double intensity = decimal(emotion.get("intensity"));
         StringBuilder prompt = new StringBuilder("情绪要求：").append(primary);
         if (secondary != null) prompt.append("，带有").append(secondary);
-        if (intensity != null) prompt.append("（强度 ").append(String.format(Locale.ROOT, "%.2f", intensity)).append("）");
+        if (intensity != null)
+            prompt.append("（强度 ").append(String.format(Locale.ROOT, "%.2f", intensity)).append("）");
         prompt.append("。请在不改变台词内容的前提下自然表达。");
         return prompt.toString();
     }
@@ -253,9 +261,13 @@ public class SeedAudioGenerationProvider implements AudioGenerationProvider {
 
     private void validateReferenceUrl(String value) {
         URI uri;
-        try { uri = URI.create(value); }
-        catch (IllegalArgumentException ex) { throw invalidRequest("参考素材 URL 不合法"); }
-        if (!"https".equalsIgnoreCase(uri.getScheme()) || blank(uri.getHost())) throw invalidRequest("参考素材只允许 HTTPS URL");
+        try {
+            uri = URI.create(value);
+        } catch (IllegalArgumentException ex) {
+            throw invalidRequest("参考素材 URL 不合法");
+        }
+        if (!"https".equalsIgnoreCase(uri.getScheme()) || blank(uri.getHost()))
+            throw invalidRequest("参考素材只允许 HTTPS URL");
         boolean allowed = properties.getReferenceUrlAllowedHosts().stream()
                 .anyMatch(host -> uri.getHost().equalsIgnoreCase(host) || uri.getHost().toLowerCase(Locale.ROOT).endsWith("." + host.toLowerCase(Locale.ROOT)));
         if (!allowed) throw invalidRequest("参考素材 URL 域名未加入白名单");
@@ -263,7 +275,8 @@ public class SeedAudioGenerationProvider implements AudioGenerationProvider {
 
     private static void validateBase64(String value, String field) {
         try {
-            if (Base64.getDecoder().decode(value).length > MAX_REFERENCE_BYTES) throw invalidRequest(field + "不能超过 10 MB");
+            if (Base64.getDecoder().decode(value).length > MAX_REFERENCE_BYTES)
+                throw invalidRequest(field + "不能超过 10 MB");
         } catch (IllegalArgumentException ex) {
             throw invalidRequest(field + "不是合法 Base64");
         }
@@ -277,9 +290,11 @@ public class SeedAudioGenerationProvider implements AudioGenerationProvider {
 
     private static int factorToRate(Double factor, String name) {
         double value = factor == null ? 1d : factor;
-        if (!Double.isFinite(value) || value < 0.5d || value > 2d) throw invalidRequest(name + " 必须在 0.5 到 2.0 之间");
+        if (!Double.isFinite(value) || value < 0.5d || value > 2d)
+            throw invalidRequest(name + " 必须在 0.5 到 2.0 之间");
         return Math.max(-50, Math.min(100, (int) Math.round((value - 1d) * 100d)));
     }
+
     private static int intExtension(Map<String, Object> extensions, String key, int fallback, int min, int max) {
         Object value = extensions == null ? null : extensions.get(key);
         if (value == null) return fallback;
@@ -288,53 +303,92 @@ public class SeedAudioGenerationProvider implements AudioGenerationProvider {
         if (result < min || result > max) throw invalidRequest(key + " 超出允许范围");
         return result;
     }
+
     private static boolean booleanExtension(Map<String, Object> extensions, String key, boolean fallback) {
         Object value = extensions == null ? null : extensions.get(key);
         if (value == null) return fallback;
         if (!(value instanceof Boolean result)) throw invalidRequest(key + " 必须是布尔值");
         return result;
     }
+
     private static String stringExtension(Map<String, Object> extensions, String key) {
         return extensions == null ? null : stringValue(extensions.get(key));
     }
-    private static String stringValue(Object value) { return value instanceof String text && !text.isBlank() ? text : null; }
+
+    private static String stringValue(Object value) {
+        return value instanceof String text && !text.isBlank() ? text : null;
+    }
+
     private static List<String> stringList(Object value) {
         if (value == null) return List.of();
         if (value instanceof String text) return text.isBlank() ? List.of() : List.of(text);
         if (value instanceof List<?> list) {
             List<String> result = new ArrayList<>();
             for (Object item : list) {
-                if (!(item instanceof String text) || text.isBlank()) throw invalidRequest("参考素材列表只能包含非空字符串");
+                if (!(item instanceof String text) || text.isBlank())
+                    throw invalidRequest("参考素材列表只能包含非空字符串");
                 result.add(text);
             }
             return result;
         }
         throw invalidRequest("参考素材参数格式不合法");
     }
+
     private static void putNumber(Map<String, Object> target, String name, double value, double multiplier) {
         if (value >= 0 && Double.isFinite(value)) target.put(name, Math.round(value * multiplier));
     }
-    private static boolean blank(String value) { return value == null || value.isBlank(); }
-    private static String valueOrDefault(String value, String fallback) { return blank(value) ? fallback : value; }
-    private static int positive(int value, int fallback) { return value > 0 ? value : fallback; }
-    private static boolean retryable(int status) { return status == 429 || status >= 500; }
+
+    private static boolean blank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    private static String valueOrDefault(String value, String fallback) {
+        return blank(value) ? fallback : value;
+    }
+
+    private static int positive(int value, int fallback) {
+        return value > 0 ? value : fallback;
+    }
+
+    private static boolean retryable(int status) {
+        return status == 429 || status >= 500;
+    }
+
     private static String statusCode(int status) {
         if (status == 401 || status == 403) return "PROVIDER_AUTH_FAILED";
         if (status == 429) return "PROVIDER_RATE_LIMITED";
         return status >= 500 ? "PROVIDER_UNAVAILABLE" : "PROVIDER_REQUEST_REJECTED";
     }
+
     private static HttpStatus mapStatus(int status) {
         if (status == 429) return HttpStatus.TOO_MANY_REQUESTS;
         return status >= 500 ? HttpStatus.SERVICE_UNAVAILABLE : HttpStatus.BAD_GATEWAY;
     }
-    private static String safeLogId(String value) { return value == null || value.isBlank() ? "-" : value.replaceAll("[^A-Za-z0-9._:-]", ""); }
-    private static BizException invalidRequest(String message) { return BizException.badRequest("AUDIO_INVALID_PARAMETERS", message); }
-    private static BizException providerError(String code, String message, HttpStatus status) { return new BizException(code, message, status); }
-    private static void backoff(int attempt) {
-        try { Thread.sleep(150L * (1L << Math.min(attempt - 1, 2))); }
-        catch (InterruptedException ex) { Thread.currentThread().interrupt(); throw providerError("PROVIDER_INTERRUPTED", "SeedAudio 调用已中断", HttpStatus.SERVICE_UNAVAILABLE); }
+
+    private static String safeLogId(String value) {
+        return value == null || value.isBlank() ? "-" : value.replaceAll("[^A-Za-z0-9._:-]", "");
     }
 
-    private record ValidatedRequest(String prompt, String format, int sampleRate) { }
-    private record SeedResponse(JsonNode body, String logId) { }
+    private static BizException invalidRequest(String message) {
+        return BizException.badRequest("AUDIO_INVALID_PARAMETERS", message);
+    }
+
+    private static BizException providerError(String code, String message, HttpStatus status) {
+        return new BizException(code, message, status);
+    }
+
+    private static void backoff(int attempt) {
+        try {
+            Thread.sleep(150L * (1L << Math.min(attempt - 1, 2)));
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw providerError("PROVIDER_INTERRUPTED", "SeedAudio 调用已中断", HttpStatus.SERVICE_UNAVAILABLE);
+        }
+    }
+
+    private record ValidatedRequest(String prompt, String format, int sampleRate) {
+    }
+
+    private record SeedResponse(JsonNode body, String logId) {
+    }
 }

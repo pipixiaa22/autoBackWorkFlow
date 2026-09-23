@@ -5,10 +5,12 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+
 import java.util.Map;
 
 public final class CatalogDtos {
-    private CatalogDtos() { }
+    private CatalogDtos() {
+    }
 
     public record CreateProviderRequest(
             @NotBlank @Size(max = 80) String providerCode,
@@ -20,7 +22,8 @@ public final class CatalogDtos {
             @Min(1) @Max(3600) Integer timeoutSeconds,
             @Min(1) @Max(1000) Integer maxConcurrency,
             Map<String, Object> config,
-            Boolean enabled) { }
+            Boolean enabled) {
+    }
 
     public record UpdateProviderRequest(
             @NotNull Integer version,
@@ -32,7 +35,8 @@ public final class CatalogDtos {
             @Min(1) @Max(3600) Integer timeoutSeconds,
             @Min(1) @Max(1000) Integer maxConcurrency,
             Map<String, Object> config,
-            Boolean enabled) { }
+            Boolean enabled) {
+    }
 
     public record CreateModelRequest(
             @NotNull Long providerId,
@@ -42,7 +46,8 @@ public final class CatalogDtos {
             Map<String, Object> capabilities,
             Map<String, Object> defaultParameters,
             Boolean enabled,
-            @Min(0) @Max(100000) Integer sortNo) { }
+            @Min(0) @Max(100000) Integer sortNo) {
+    }
 
     public record UpdateModelRequest(
             @NotNull Integer version,
@@ -51,5 +56,6 @@ public final class CatalogDtos {
             Map<String, Object> capabilities,
             Map<String, Object> defaultParameters,
             Boolean enabled,
-            @Min(0) @Max(100000) Integer sortNo) { }
+            @Min(0) @Max(100000) Integer sortNo) {
+    }
 }

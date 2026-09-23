@@ -2,16 +2,24 @@ package com.ckrey.autobackworkflow.ai.api;
 
 import com.ckrey.autobackworkflow.domain.AdsAnalysisRun;
 import jakarta.validation.constraints.NotNull;
+
 import java.util.Date;
 import java.util.Map;
 
 public final class AnalysisDtos {
-    private AnalysisDtos() { }
-    public record CreateAnalysisRequest(@NotNull Long skillVersionId, String rewriteMode, Long providerId, Long modelId,
-                                        Map<String, Object> localRules) { }
-    public record ApplyAnalysisRequest(@NotNull Integer projectVersion) { }
+    private AnalysisDtos() {
+    }
 
-    /** Raw provider payloads and complete source snapshots remain server-side for audit/debugging. */
+    public record CreateAnalysisRequest(@NotNull Long skillVersionId, String rewriteMode, Long providerId, Long modelId,
+                                        Map<String, Object> localRules) {
+    }
+
+    public record ApplyAnalysisRequest(@NotNull Integer projectVersion) {
+    }
+
+    /**
+     * Raw provider payloads and complete source snapshots remain server-side for audit/debugging.
+     */
     public record AnalysisRunView(Long id, String runNo, Long projectId, Integer projectVersion,
                                   Long skillVersionId, Long providerId, Long modelId,
                                   String providerCodeSnapshot, String modelCodeSnapshot, String rewriteMode,

@@ -5,6 +5,7 @@ import com.ckrey.autobackworkflow.ai.model.AnalysisCandidate;
 import com.ckrey.autobackworkflow.common.exception.BizException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.net.URI;
@@ -14,6 +15,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.List;
 import java.util.Set;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -53,7 +55,10 @@ public class DeepSeekLlmProvider implements LlmProvider {
         this.http = http;
     }
 
-    @Override public String providerCode() { return "deepseek"; }
+    @Override
+    public String providerCode() {
+        return "deepseek";
+    }
 
     @Override
     public AnalysisCandidate analyse(LlmAnalysisCommand command) {
@@ -154,7 +159,8 @@ public class DeepSeekLlmProvider implements LlmProvider {
             AnalysisCandidate.CandidateSegment item = segments.get(index);
             if (item == null || item.segmentNo() != index + 1) invalidOutput("分段编号必须从 1 连续递增");
             if (blank(item.speaker()) || blank(item.originalText()) || blank(item.spokenText())
-                    || blank(item.subtitleText()) || blank(item.voiceDirection())) invalidOutput("分析结果存在空的必填字段");
+                    || blank(item.subtitleText()) || blank(item.voiceDirection()))
+                invalidOutput("分析结果存在空的必填字段");
             if (item.speaker().length() > 120 || item.voiceDirection().length() > 400
                     || item.spokenText().length() > 2_400) invalidOutput("分析结果字段长度超出 SeedAudio 限制");
             if (item.sourceStart() < previousEnd || item.sourceEnd() <= item.sourceStart()
@@ -167,7 +173,8 @@ public class DeepSeekLlmProvider implements LlmProvider {
             requireRange(item.emotion().intensity(), BigDecimal.ZERO, BigDecimal.ONE, "emotion.intensity");
             if (item.pauseBeforeMs() < 0 || item.pauseAfterMs() < 0
                     || item.pauseBeforeMs() > 120_000 || item.pauseAfterMs() > 120_000) invalidOutput("停顿时长不合法");
-            if (!valueOrDefault(command.rewriteMode(), "STRICT").equals(item.rewriteMode())) invalidOutput("改写模式不一致");
+            if (!valueOrDefault(command.rewriteMode(), "STRICT").equals(item.rewriteMode()))
+                invalidOutput("改写模式不一致");
             previousEnd = item.sourceEnd();
         }
     }
@@ -179,29 +186,56 @@ public class DeepSeekLlmProvider implements LlmProvider {
     }
 
     private static void requireRange(BigDecimal value, BigDecimal min, BigDecimal max, String name) {
-        if (value == null || value.compareTo(min) < 0 || value.compareTo(max) > 0) invalidOutput(name + " 超出允许范围");
+        if (value == null || value.compareTo(min) < 0 || value.compareTo(max) > 0)
+            invalidOutput(name + " 超出允许范围");
     }
-    private static void invalidOutput(String message) { throw providerError("SKILL_INVALID_OUTPUT", message, HttpStatus.BAD_GATEWAY); }
-    private static boolean blank(String value) { return value == null || value.isBlank(); }
-    private static String nullToEmpty(String value) { return value == null ? "" : value; }
-    private static String valueOrDefault(String value, String fallback) { return value == null || value.isBlank() ? fallback : value; }
-    private static int positive(int value, int fallback) { return value > 0 ? value : fallback; }
-    private static boolean retryable(int status) { return status == 429 || status >= 500; }
+
+    private static void invalidOutput(String message) {
+        throw providerError("SKILL_INVALID_OUTPUT", message, HttpStatus.BAD_GATEWAY);
+    }
+
+    private static boolean blank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
+    }
+
+    private static String valueOrDefault(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private static int positive(int value, int fallback) {
+        return value > 0 ? value : fallback;
+    }
+
+    private static boolean retryable(int status) {
+        return status == 429 || status >= 500;
+    }
+
     private static String statusCode(int status) {
         if (status == 401 || status == 403) return "PROVIDER_AUTH_FAILED";
         if (status == 429) return "PROVIDER_RATE_LIMITED";
         return status >= 500 ? "PROVIDER_UNAVAILABLE" : "PROVIDER_REQUEST_REJECTED";
     }
+
     private static HttpStatus mapStatus(int status) {
         if (status == 429) return HttpStatus.TOO_MANY_REQUESTS;
         if (status == 401 || status == 403) return HttpStatus.BAD_GATEWAY;
         return status >= 500 ? HttpStatus.SERVICE_UNAVAILABLE : HttpStatus.BAD_GATEWAY;
     }
+
     private static BizException providerError(String code, String message, HttpStatus status) {
         return new BizException(code, message, status);
     }
+
     private static void backoff(int attempt) {
-        try { Thread.sleep(100L * (1L << Math.min(attempt - 1, 2))); }
-        catch (InterruptedException ex) { Thread.currentThread().interrupt(); throw providerError("PROVIDER_INTERRUPTED", "DeepSeek 调用已中断", HttpStatus.SERVICE_UNAVAILABLE); }
+        try {
+            Thread.sleep(100L * (1L << Math.min(attempt - 1, 2)));
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw providerError("PROVIDER_INTERRUPTED", "DeepSeek 调用已中断", HttpStatus.SERVICE_UNAVAILABLE);
+        }
     }
 }

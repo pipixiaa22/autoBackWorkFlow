@@ -165,7 +165,8 @@ public class AudioTaskApplicationService {
         AdsAudioAsset asset = asset(id);
         Path path = root.resolve(asset.getObjectKey()).normalize();
         if (!path.startsWith(root)) throw BizException.badRequest("AUDIO_ASSET_INVALID_PATH", "音频资产路径不合法");
-        if (!Files.isRegularFile(path)) throw BizException.notFound("AUDIO_ASSET_FILE_MISSING", "音频资产文件不存在或已过期");
+        if (!Files.isRegularFile(path))
+            throw BizException.notFound("AUDIO_ASSET_FILE_MISSING", "音频资产文件不存在或已过期");
         return new FileSystemResource(path);
     }
 
@@ -200,6 +201,12 @@ public class AudioTaskApplicationService {
             file.transferTo(target);
             asset.setFileSizeBytes(Files.size(target));
             asset.setSha256(sha(target));
+            ReferenceAudioMetadata.Metadata metadata = ReferenceAudioMetadata.read(target);
+            asset.setDurationMs(metadata.durationMs());
+            asset.setSampleRateHz(metadata.sampleRateHz());
+            asset.setBitDepth(metadata.bitDepth());
+            asset.setChannels(metadata.channels());
+
             assets.save(asset);
             return asset;
         } catch (Exception ex) {
@@ -281,10 +288,10 @@ public class AudioTaskApplicationService {
             asset.setMediaType(result.mediaType());
             asset.setFileSizeBytes(Files.size(destination));
             asset.setSha256(sha(destination));
-            asset.setDurationMs(longMetadata(result.metadata(), "durationMs", estimatedPcmDuration(result.audio(), format, result.metadata())));
-            asset.setSampleRateHz(intMetadata(result.metadata(), "sampleRate", null));
-            asset.setBitDepth(Set.of("wav", "pcm").contains(format) ? 16 : null);
-            asset.setChannels(Set.of("wav", "pcm").contains(format) ? 1 : null);
+            asset.setDurationMs(longMetadata(result.metadata(), "durationMs", 0L));
+            asset.setSampleRateHz(intMetadata(result.metadata(), "sampleRate", 0));
+            asset.setBitDepth(Set.of("wav", "pcm").contains(format) ? 16 : 0);
+            asset.setChannels(Set.of("wav", "pcm").contains(format) ? 1 : 0);
             asset.setManifestJson(Hashing.json(Map.of("warnings", result.warnings(), "providerMetadata", result.metadata())));
             asset.setVersion(1);
             asset.setCreatedAt(new Date());
@@ -337,12 +344,15 @@ public class AudioTaskApplicationService {
     private Map<String, Object> readParameters(Object value) {
         if (value == null) return new LinkedHashMap<>();
         try {
-            if (value instanceof String text) return mapper.readValue(text, new TypeReference<>() { });
-            return mapper.convertValue(value, new TypeReference<>() { });
+            if (value instanceof String text) return mapper.readValue(text, new TypeReference<>() {
+            });
+            return mapper.convertValue(value, new TypeReference<>() {
+            });
         } catch (Exception ex) {
             throw BizException.badRequest("AUDIO_INVALID_PARAMETERS", "保存的音频参数无法读取");
         }
     }
+
     private void validateReferenceMode(Long projectId, AudioDtos.CreateTaskRequest request, AdsProvider provider) {
         List<Long> referenceIds = request.referenceAudioAssetIds() == null ? List.of() : request.referenceAudioAssetIds();
         if (referenceIds.size() != new HashSet<>(referenceIds).size()) {
@@ -371,12 +381,17 @@ public class AudioTaskApplicationService {
             }
         }
     }
+
     private Map<String, Object> resolveReferenceAudio(Long projectId, Map<String, Object> parameters) {
         Object value = parameters.get("referenceAudioAssetIds");
         if (value == null) return parameters;
         List<Long> ids;
-        try { ids = mapper.convertValue(value, new TypeReference<>() { }); }
-        catch (IllegalArgumentException ex) { throw BizException.badRequest("AUDIO_REFERENCE_INVALID", "参考音频参数无法读取"); }
+        try {
+            ids = mapper.convertValue(value, new TypeReference<>() {
+            });
+        } catch (IllegalArgumentException ex) {
+            throw BizException.badRequest("AUDIO_REFERENCE_INVALID", "参考音频参数无法读取");
+        }
         if (ids == null || ids.isEmpty() || ids.size() > 3) {
             throw BizException.badRequest("AUDIO_REFERENCE_INVALID", "参考音频数量必须在 1 到 3 之间");
         }
@@ -384,7 +399,8 @@ public class AudioTaskApplicationService {
                 .eq(AdsAudioAsset::getProjectId, projectId).eq(AdsAudioAsset::getAssetType, "REFERENCE")
                 .eq(AdsAudioAsset::getStatus, "ACTIVE").eq(AdsAudioAsset::getDeleted, 0)
                 .in(AdsAudioAsset::getId, ids));
-        if (rows.size() != ids.size()) throw BizException.badRequest("AUDIO_REFERENCE_INVALID", "参考音频不存在或不可用");
+        if (rows.size() != ids.size())
+            throw BizException.badRequest("AUDIO_REFERENCE_INVALID", "参考音频不存在或不可用");
         Map<Long, AdsAudioAsset> byId = new HashMap<>();
         rows.forEach(asset -> byId.put(asset.getId(), asset));
         List<String> audioData = new ArrayList<>();
@@ -394,20 +410,28 @@ public class AudioTaskApplicationService {
             if (!path.startsWith(root) || !Files.isRegularFile(path)) {
                 throw BizException.notFound("AUDIO_REFERENCE_FILE_MISSING", "参考音频文件不存在或已过期");
             }
-            try { audioData.add(Base64.getEncoder().encodeToString(Files.readAllBytes(path))); }
-            catch (Exception ex) { throw BizException.badRequest("AUDIO_REFERENCE_FILE_MISSING", "参考音频文件无法读取"); }
+            try {
+                audioData.add(Base64.getEncoder().encodeToString(Files.readAllBytes(path)));
+            } catch (Exception ex) {
+                throw BizException.badRequest("AUDIO_REFERENCE_FILE_MISSING", "参考音频文件无法读取");
+            }
         }
         Map<String, Object> resolved = new LinkedHashMap<>(parameters);
         resolved.remove("referenceAudioAssetIds");
         resolved.put("referenceAudioData", audioData);
         return resolved;
     }
+
     private static String stringParameter(Map<String, Object> values, String key, String fallback) {
-        Object value = values.get(key); return value instanceof String text && !text.isBlank() ? text : fallback;
+        Object value = values.get(key);
+        return value instanceof String text && !text.isBlank() ? text : fallback;
     }
+
     private static Double doubleParameter(Map<String, Object> values, String key, Double fallback) {
-        Object value = values.get(key); return value instanceof Number number ? number.doubleValue() : fallback;
+        Object value = values.get(key);
+        return value instanceof Number number ? number.doubleValue() : fallback;
     }
+
     private static String extension(String mediaType, String fallback) {
         if ("audio/mpeg".equalsIgnoreCase(mediaType)) return "mp3";
         if ("audio/ogg".equalsIgnoreCase(mediaType)) return "ogg";
@@ -415,32 +439,39 @@ public class AudioTaskApplicationService {
         if ("audio/wav".equalsIgnoreCase(mediaType)) return "wav";
         return fallback.replaceAll("[^a-zA-Z0-9]", "");
     }
+
     private static String referenceExtension(String fileName, String mediaType) {
         String name = fileName == null ? "" : fileName.toLowerCase(Locale.ROOT);
-        if (name.endsWith(".wav") || "audio/wav".equalsIgnoreCase(mediaType) || "audio/x-wav".equalsIgnoreCase(mediaType)) return "wav";
+        if (name.endsWith(".wav") || "audio/wav".equalsIgnoreCase(mediaType) || "audio/x-wav".equalsIgnoreCase(mediaType))
+            return "wav";
         if (name.endsWith(".mp3") || "audio/mpeg".equalsIgnoreCase(mediaType)) return "mp3";
         if (name.endsWith(".pcm") || "audio/l16".equalsIgnoreCase(mediaType)) return "pcm";
         if (name.endsWith(".ogg") || "audio/ogg".equalsIgnoreCase(mediaType)) return "ogg";
         throw BizException.badRequest("AUDIO_REFERENCE_INVALID", "参考音频只支持 wav、mp3、pcm 或 ogg");
     }
+
     private static String referenceMediaType(String extension) {
-        return switch (extension) { case "wav" -> "audio/wav"; case "mp3" -> "audio/mpeg"; case "pcm" -> "audio/L16"; default -> "audio/ogg"; };
+        return switch (extension) {
+            case "wav" -> "audio/wav";
+            case "mp3" -> "audio/mpeg";
+            case "pcm" -> "audio/L16";
+            default -> "audio/ogg";
+        };
     }
+
     private static String safeFileName(String value, String fallback) {
         if (value == null || value.isBlank()) return fallback;
         String sanitized = Path.of(value).getFileName().toString().replaceAll("[^\\p{IsHan}A-Za-z0-9._-]", "_");
         return sanitized.isBlank() ? fallback : sanitized.substring(0, Math.min(sanitized.length(), 200));
     }
-    private static Long estimatedPcmDuration(byte[] audio, String format, Map<String, Object> metadata) {
-        if (!Set.of("wav", "pcm").contains(format)) return null;
-        Integer rate = intMetadata(metadata, "sampleRate", 40000);
-        int header = "wav".equals(format) && audio.length >= 44 ? 44 : 0;
-        return Math.round(Math.max(0, audio.length - header) / 2d / rate * 1000d);
-    }
+
     private static Long longMetadata(Map<String, Object> metadata, String key, Long fallback) {
-        Object value = metadata == null ? null : metadata.get(key); return value instanceof Number number ? number.longValue() : fallback;
+        Object value = metadata == null ? null : metadata.get(key);
+        return value instanceof Number number ? number.longValue() : fallback;
     }
+
     private static Integer intMetadata(Map<String, Object> metadata, String key, Integer fallback) {
-        Object value = metadata == null ? null : metadata.get(key); return value instanceof Number number ? number.intValue() : fallback;
+        Object value = metadata == null ? null : metadata.get(key);
+        return value instanceof Number number ? number.intValue() : fallback;
     }
 }

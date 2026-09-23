@@ -7,4 +7,5 @@ import org.springframework.context.annotation.Configuration;
 
 @Configuration
 @EnableConfigurationProperties({DeepSeekProperties.class, SeedAudioProperties.class})
-public class AiProviderConfiguration { }
+public class AiProviderConfiguration {
+}

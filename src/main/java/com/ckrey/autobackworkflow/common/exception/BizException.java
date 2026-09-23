@@ -12,8 +12,13 @@ public class BizException extends RuntimeException {
         this.status = status;
     }
 
-    public String getCode() { return code; }
-    public HttpStatus getStatus() { return status; }
+    public String getCode() {
+        return code;
+    }
+
+    public HttpStatus getStatus() {
+        return status;
+    }
 
     public static BizException notFound(String code, String message) {
         return new BizException(code, message, HttpStatus.NOT_FOUND);

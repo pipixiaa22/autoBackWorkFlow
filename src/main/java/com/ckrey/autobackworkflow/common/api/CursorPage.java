@@ -1,13 +1,16 @@
 package com.ckrey.autobackworkflow.common.api;
 
 import com.ckrey.autobackworkflow.common.exception.BizException;
+
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import java.util.function.Function;
 
-/** A stable, opaque cursor page ordered by createdAt DESC, id DESC. */
+/**
+ * A stable, opaque cursor page ordered by createdAt DESC, id DESC.
+ */
 public record CursorPage<T>(List<T> items, String nextCursor, boolean hasMore) {
     private static final int DEFAULT_LIMIT = 20;
     private static final int MAX_LIMIT = 100;
@@ -49,5 +52,6 @@ public record CursorPage<T>(List<T> items, String nextCursor, boolean hasMore) {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(raw.getBytes(StandardCharsets.UTF_8));
     }
 
-    public record Cursor(Date createdAt, Long id) { }
+    public record Cursor(Date createdAt, Long id) {
+    }
 }

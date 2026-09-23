@@ -5,7 +5,9 @@ import com.ckrey.autobackworkflow.common.api.ApiResponse;
 import com.ckrey.autobackworkflow.domain.AdsModel;
 import com.ckrey.autobackworkflow.domain.AdsProvider;
 import jakarta.validation.Valid;
+
 import java.util.List;
+
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -21,10 +23,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class CatalogController {
     private final CatalogApplicationService catalog;
 
-    public CatalogController(CatalogApplicationService catalog) { this.catalog = catalog; }
+    public CatalogController(CatalogApplicationService catalog) {
+        this.catalog = catalog;
+    }
 
     @GetMapping("/providers")
-    public ApiResponse<List<AdsProvider>> providers() { return ApiResponse.ok(catalog.providers()); }
+    public ApiResponse<List<AdsProvider>> providers() {
+        return ApiResponse.ok(catalog.providers());
+    }
 
     @PostMapping("/providers")
     public ApiResponse<AdsProvider> createProvider(@Valid @RequestBody CatalogDtos.CreateProviderRequest request) {
@@ -38,7 +44,8 @@ public class CatalogController {
 
     @DeleteMapping("/providers/{id}")
     public ApiResponse<Void> deleteProvider(@PathVariable Long id, @RequestParam Integer version) {
-        catalog.deleteProvider(id, version); return ApiResponse.ok(null);
+        catalog.deleteProvider(id, version);
+        return ApiResponse.ok(null);
     }
 
     @GetMapping("/models")
@@ -58,6 +65,7 @@ public class CatalogController {
 
     @DeleteMapping("/models/{id}")
     public ApiResponse<Void> deleteModel(@PathVariable Long id, @RequestParam Integer version) {
-        catalog.deleteModel(id, version); return ApiResponse.ok(null);
+        catalog.deleteModel(id, version);
+        return ApiResponse.ok(null);
     }
 }

@@ -1,9 +1,12 @@
 package com.ckrey.autobackworkflow.common.api;
 
 import java.util.Date;
+
 import org.slf4j.MDC;
 
-/** Stable envelope used by every JSON API response. */
+/**
+ * Stable envelope used by every JSON API response.
+ */
 public record ApiResponse<T>(boolean success, String code, String message, T data,
                              String traceId, Date timestamp) {
     public static <T> ApiResponse<T> ok(T data) {
