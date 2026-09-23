@@ -2,6 +2,7 @@ package com.ckrey.autobackworkflow.audio.api;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.ckrey.autobackworkflow.audio.application.AudioTaskApplicationService;
+import com.ckrey.autobackworkflow.audio.application.AudioTaskEventStream;
 import com.ckrey.autobackworkflow.common.api.ApiResponse;
 import com.ckrey.autobackworkflow.domain.AdsGenerationItem;
 import com.ckrey.autobackworkflow.domain.AdsGenerationTask;
@@ -20,16 +21,19 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @RestController
 @RequestMapping("/api/v1")
 public class AudioController {
     private final AudioTaskApplicationService audio;
+    private final AudioTaskEventStream eventStream;
     private final AdsProviderService providers;
     private final AdsModelService models;
 
-    public AudioController(AudioTaskApplicationService audio, AdsProviderService providers, AdsModelService models) {
+    public AudioController(AudioTaskApplicationService audio, AudioTaskEventStream eventStream, AdsProviderService providers, AdsModelService models) {
         this.audio = audio;
+        this.eventStream = eventStream;
         this.providers = providers;
         this.models = models;
     }
@@ -58,7 +62,13 @@ public class AudioController {
 
     @GetMapping("/audio-tasks/{id}")
     public ApiResponse<Map<String, Object>> get(@PathVariable Long id) {
-        return ApiResponse.ok(Map.of("task", audio.get(id), "items", audio.itemList(id)));
+        return ApiResponse.ok(audio.snapshot(id));
+    }
+
+    @GetMapping(value = "/audio-tasks/{id}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter events(@PathVariable Long id) {
+        audio.get(id);
+        return eventStream.subscribe(id, () -> audio.snapshot(id));
     }
 
     @PostMapping("/audio-tasks/{id}/cancel")

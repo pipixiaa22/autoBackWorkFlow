@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,10 +25,14 @@ class SeedAudioGenerationProviderTests {
     private final AtomicReference<String> requestBody = new AtomicReference<>();
     private final AtomicReference<String> apiKey = new AtomicReference<>();
     private final AtomicReference<String> requestId = new AtomicReference<>();
+    private final AtomicReference<String> responseOverride = new AtomicReference<>();
+    private final AtomicInteger responseStatus = new AtomicInteger(200);
     private HttpServer server;
 
     @BeforeEach
     void startServer() throws Exception {
+        responseOverride.set(null);
+        responseStatus.set(200);
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/api/v3/tts/create", exchange -> {
             requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
@@ -40,10 +45,11 @@ class SeedAudioGenerationProviderTests {
             response.put("duration", 1.25);
             response.put("original_duration", 1.5);
             response.putObject("subtitle").put("text", "晚安");
-            byte[] bytes = mapper.writeValueAsBytes(response);
+            byte[] bytes = responseOverride.get() == null
+                    ? mapper.writeValueAsBytes(response) : responseOverride.get().getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
             exchange.getResponseHeaders().add("X-Tt-Logid", "log-123");
-            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.sendResponseHeaders(responseStatus.get(), bytes.length);
             exchange.getResponseBody().write(bytes);
             exchange.close();
         });
@@ -100,6 +106,59 @@ class SeedAudioGenerationProviderTests {
         JsonNode body = mapper.readTree(requestBody.get());
         assertTrue(body.path("references").isMissingNode());
         assertTrue(body.path("text_prompt").asText().contains("我会找到你的。"));
+    }
+
+    @Test
+    void reportsProviderMessageWhenCodeIsMissing() {
+        responseOverride.set("{\"message\":\"当前模型暂不可用\"}");
+
+        BizException error = assertThrows(BizException.class, () -> provider().generate(command()));
+
+        assertEquals("PROVIDER_INVALID_RESPONSE", error.getCode());
+        assertTrue(error.getMessage().contains("响应缺少 code 和音频数据"));
+        assertTrue(error.getMessage().contains("当前模型暂不可用"));
+        assertTrue(error.getMessage().contains("fields=[message]"));
+        assertTrue(error.getMessage().contains("log-123"));
+    }
+
+    @Test
+    void acceptsAudioResponseWithoutCode() {
+        responseOverride.set("{\"audio\":\"AQIDBA==\",\"duration\":1.25,"
+                + "\"original_duration\":1.5,\"subtitle\":{},\"url\":\"https://example.com/audio\"}");
+
+        var result = provider().generate(command());
+
+        assertArrayEquals(new byte[]{1, 2, 3, 4}, result.audio());
+        assertEquals(1250L, result.metadata().get("durationMs"));
+    }
+
+    @Test
+    void reportsProviderCodeAndMessageOnBusinessFailure() {
+        responseOverride.set("{\"code\":123,\"message\":\"模型无权限\"}");
+
+        BizException error = assertThrows(BizException.class, () -> provider().generate(command()));
+
+        assertEquals("PROVIDER_REQUEST_REJECTED", error.getCode());
+        assertTrue(error.getMessage().contains("code=123"));
+        assertTrue(error.getMessage().contains("模型无权限"));
+    }
+
+    @Test
+    void reportsProviderMessageOnHttpFailure() {
+        responseStatus.set(403);
+        responseOverride.set("{\"message\":\"API Key 无权限\"}");
+
+        BizException error = assertThrows(BizException.class, () -> provider().generate(command()));
+
+        assertEquals("PROVIDER_AUTH_FAILED", error.getCode());
+        assertTrue(error.getMessage().contains("HTTP 403"));
+        assertTrue(error.getMessage().contains("API Key 无权限"));
+    }
+
+    private static AudioGenerationProvider.AudioGenerationCommand command() {
+        return new AudioGenerationProvider.AudioGenerationCommand(
+                "request-error", "seed-audio-1.0", "晚安", "",
+                new AudioGenerationProvider.VoiceDirection(null, 1d, 1d, Map.of()), "wav", Map.of());
     }
 
     private SeedAudioGenerationProvider provider() {

@@ -10,6 +10,7 @@ import com.ckrey.autobackworkflow.service.AdsSkillVersionService;
 import com.ckrey.autobackworkflow.skill.api.SkillDtos;
 import java.util.Date;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,6 +19,88 @@ public class SkillApplicationService {
     private final AdsSkillService skills; private final AdsSkillVersionService versions;
     public SkillApplicationService(AdsSkillService skills, AdsSkillVersionService versions) { this.skills = skills; this.versions = versions; }
     public List<AdsSkill> list() { return skills.list(Wrappers.<AdsSkill>lambdaQuery().eq(AdsSkill::getDeleted, 0).eq(AdsSkill::getEnabled, 1)); }
+
+    public SkillDtos.SkillDetail get(Long id) {
+        AdsSkill skill = requiredSkill(id);
+        AdsSkillVersion current = latestVersion(id);
+        return new SkillDtos.SkillDetail(skill.getId(), skill.getName(),
+                current == null ? "" : current.getSystemPromptTemplate(),
+                current == null ? null : current.getId(), skill.getVersion());
+    }
+
+    @Transactional
+    public SkillDtos.SkillDetail create(SkillDtos.SaveSkillRequest request) {
+        Date now = new Date();
+        AdsSkill skill = new AdsSkill();
+        skill.setSkillCode("skill-" + UUID.randomUUID());
+        skill.setName(request.title().trim());
+        skill.setTaskType("DIALOGUE_ANALYSIS");
+        skill.setEnabled(1);
+        skill.setVersion(1);
+        skill.setDeleted(0);
+        skill.setCreatedAt(now);
+        skill.setUpdatedAt(now);
+        skills.save(skill);
+        AdsSkillVersion current = savePublishedVersion(skill.getId(), request.content(), null, now);
+        return new SkillDtos.SkillDetail(skill.getId(), skill.getName(), current.getSystemPromptTemplate(),
+                current.getId(), skill.getVersion());
+    }
+
+    @Transactional
+    public SkillDtos.SkillDetail update(Long id, SkillDtos.SaveSkillRequest request) {
+        AdsSkill skill = requiredSkill(id);
+        AdsSkillVersion previous = latestVersion(id);
+        Date now = new Date();
+        skill.setName(request.title().trim());
+        skill.setVersion(skill.getVersion() + 1);
+        skill.setUpdatedAt(now);
+        skills.updateById(skill);
+        AdsSkillVersion current = savePublishedVersion(id, request.content(), previous, now);
+        return new SkillDtos.SkillDetail(id, skill.getName(), current.getSystemPromptTemplate(),
+                current.getId(), skill.getVersion());
+    }
+
+    @Transactional
+    public void delete(Long id) {
+        AdsSkill skill = requiredSkill(id);
+        skill.setDeleted(1);
+        skill.setVersion(skill.getVersion() + 1);
+        skill.setUpdatedAt(new Date());
+        skills.updateById(skill);
+    }
+
+    private AdsSkillVersion latestVersion(Long skillId) {
+        return versions.getOne(Wrappers.<AdsSkillVersion>lambdaQuery()
+                .eq(AdsSkillVersion::getSkillId, skillId)
+                .eq(AdsSkillVersion::getDeleted, 0)
+                .orderByDesc(AdsSkillVersion::getCreatedAt)
+                .orderByDesc(AdsSkillVersion::getId)
+                .last("LIMIT 1"));
+    }
+
+    private AdsSkillVersion savePublishedVersion(Long skillId, String content, AdsSkillVersion previous, Date now) {
+        AdsSkillVersion value = new AdsSkillVersion();
+        value.setSkillId(skillId);
+        value.setVersionNo(previous == null ? "1.0.0" : "r-" + UUID.randomUUID().toString().replace("-", ""));
+        value.setStatus("PUBLISHED");
+        value.setSystemPromptTemplate(content);
+        value.setInputSchemaJson(previous == null ? "{}" : previous.getInputSchemaJson());
+        value.setOutputSchemaJson(previous == null ? "{}" : previous.getOutputSchemaJson());
+        value.setSplitRulesJson(previous == null ? "{}" : previous.getSplitRulesJson());
+        value.setRewriteRulesJson(previous == null ? "{}" : previous.getRewriteRulesJson());
+        value.setEmotionMappingJson(previous == null ? "{}" : previous.getEmotionMappingJson());
+        value.setExamplesJson(previous == null ? "[]" : previous.getExamplesJson());
+        value.setModelParametersJson(previous == null ? "{}" : previous.getModelParametersJson());
+        value.setTestCasesJson(previous == null ? "[]" : previous.getTestCasesJson());
+        value.setContentHash(Hashing.sha256(content + value.getVersionNo()));
+        value.setPublishedAt(now);
+        value.setVersion(1);
+        value.setDeleted(0);
+        value.setCreatedAt(now);
+        value.setUpdatedAt(now);
+        versions.save(value);
+        return value;
+    }
     public List<AdsSkillVersion> versions(Long skillId) { requiredSkill(skillId); return versions.list(Wrappers.<AdsSkillVersion>lambdaQuery().eq(AdsSkillVersion::getSkillId, skillId).eq(AdsSkillVersion::getDeleted, 0).orderByDesc(AdsSkillVersion::getCreatedAt)); }
     @Transactional public AdsSkillVersion createVersion(Long skillId, SkillDtos.CreateSkillVersionRequest request) {
         requiredSkill(skillId);

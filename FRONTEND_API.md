@@ -31,7 +31,7 @@
 
 1. 创建项目 → 查询 Skill 与版本 → 创建 AI 分析。
 2. 分析成功后应用结果，得到正式台词分段；可进行编辑、拆分、合并、排序。
-3. 查询音频 Provider/模型，创建音频任务，并轮询任务详情至终态。
+3. 查询音频 Provider/模型，创建音频任务，并通过 SSE 接收任务状态直至终态。
 4. 创建 SRT 或素材包导出，获取记录后下载文件。
 
 ## 项目
@@ -228,11 +228,12 @@
 
 `POST /projects/{projectId}/audio-reference-assets`，使用 `multipart/form-data`，字段名为 `file`。支持 wav、mp3、pcm、ogg，最大 10 MB；返回 `AudioAsset`。将返回的 `id` 放进创建任务请求的 `referenceAudioAssetIds`。参考音频资产只保存一份，生成时才转换为 SeedAudio 所需的 Base64 数据，不会重复写入每个子任务。
 
-### 轮询、取消与重试
+### 状态推送、取消与重试
 
 | 方法 | 路径 | 返回/说明 |
 | --- | --- | --- |
 | GET | `/audio-tasks/{id}` | `{ "task": GenerationTask, "items": GenerationItem[] }` |
+| GET | `/audio-tasks/{id}/events` | SSE 状态推送；事件为 `task` 或终态 `complete`，数据结构与任务详情相同。接入方法见根目录 `AUDIO_TASK_SSE_FRONTEND.md`。 |
 | POST | `/audio-tasks/{id}/cancel` | 请求取消；终态任务直接原样返回 |
 | POST | `/audio-items/{id}/retry` | 仅 `FAILED` 子任务可重试，返回重新置为 `WAITING` 的 `GenerationItem` |
 
@@ -247,7 +248,7 @@
 
 当分段包含 `emotion: { primary, secondary, intensity }` 时，服务端会将其转换为 SeedAudio 的中文 `text_prompt` 情绪要求，并和 `voiceDirection`、台词一并发送；`intensity` 会规范化到 0–1。
 
-任务状态：`PENDING`、`RUNNING`、`CANCEL_REQUESTED`、`SUCCEEDED`、`PARTIAL_SUCCESS`、`FAILED`、`CANCELLED`。子任务状态：`WAITING`、`GENERATING`、`SUCCESS`、`FAILED`。建议每 1–2 秒轮询，直到任务为终态。
+任务状态：`PENDING`、`RUNNING`、`CANCEL_REQUESTED`、`SUCCEEDED`、`PARTIAL_SUCCESS`、`FAILED`、`CANCELLED`。子任务状态：`WAITING`、`GENERATING`、`SUCCESS`、`FAILED`。前端订阅 SSE 至终态；任务与子任务的 `errorCode`、`errorMessage` 用于展示失败原因。
 
 ## 基础数据管理
 

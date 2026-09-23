@@ -25,6 +25,28 @@ public class SkillController {
         return ApiResponse.ok(skills.list());
     }
 
+    @GetMapping("/skills/{id}")
+    public ApiResponse<SkillDtos.SkillDetail> get(@PathVariable Long id) {
+        return ApiResponse.ok(skills.get(id));
+    }
+
+    @PostMapping("/skills")
+    public ApiResponse<SkillDtos.SkillDetail> createSkill(@Valid @RequestBody SkillDtos.SaveSkillRequest request) {
+        return ApiResponse.ok(skills.create(request));
+    }
+
+    @PutMapping("/skills/{id}")
+    public ApiResponse<SkillDtos.SkillDetail> updateSkill(@PathVariable Long id,
+                                                          @Valid @RequestBody SkillDtos.SaveSkillRequest request) {
+        return ApiResponse.ok(skills.update(id, request));
+    }
+
+    @DeleteMapping("/skills/{id}")
+    public ApiResponse<Void> deleteSkill(@PathVariable Long id) {
+        skills.delete(id);
+        return ApiResponse.ok(null);
+    }
+
     @GetMapping("/skills/{id}/versions")
     public ApiResponse<List<AdsSkillVersion>> versions(@PathVariable Long id) {
         return ApiResponse.ok(skills.versions(id));

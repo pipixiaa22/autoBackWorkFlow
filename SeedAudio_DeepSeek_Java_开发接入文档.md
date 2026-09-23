@@ -2,7 +2,7 @@
 
 > 适用项目：`autoBackWorkFlow`（Java 21、Spring Boot、Jackson）。
 >
-> 本文整理日期：2026-09-20。SeedAudio 部分以项目根目录的 `read.txt`（导出的《豆包语音_音频生成HTTP》）为准；DeepSeek 部分以其官方 API 文档为准。接口和模型可用性以控制台及官方最新文档为最终依据。
+> 本文整理日期：2026-09-20。SeedAudio 部分以项目根目录的 `豆包音频接入.txt`（导出的《豆包语音_音频生成HTTP》）为准；DeepSeek 部分以其官方 API 文档为准。接口和模型可用性以控制台及官方最新文档为最终依据。
 
 ## 1. 接入目标与整体链路
 
@@ -392,6 +392,6 @@ public final class DeepSeekClient {
 
 ## 8. 官方参考
 
-- [豆包语音 - 音频生成 HTTP](https://docs.volcengine.com/docs/DoubaoVoice/audio-generation-http?lang=zh)（本地导出依据：`read.txt`）
+- [豆包语音 - 音频生成 HTTP](https://docs.volcengine.com/docs/DoubaoVoice/audio-generation-http?lang=zh)（本地导出依据：`豆包音频接入.txt`）
 - [DeepSeek API 文档](https://api-docs.deepseek.com/zh-cn/)
 - [DeepSeek 首次调用 API / Chat Completions](https://api-docs.deepseek.com/zh-cn/)

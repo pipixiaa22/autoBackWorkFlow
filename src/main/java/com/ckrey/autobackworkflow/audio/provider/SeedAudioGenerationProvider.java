@@ -181,14 +181,29 @@ public class SeedAudioGenerationProvider implements AudioGenerationProvider {
                         continue;
                     }
                     throw providerError(statusCode(response.statusCode()),
-                            "SeedAudio 调用失败（HTTP " + response.statusCode() + ", logId=" + safeLogId(logId) + "）",
+                            "SeedAudio 调用失败（HTTP " + response.statusCode()
+                                    + providerMessage(response.body()) + ", logId=" + safeLogId(logId) + "）",
                             mapStatus(response.statusCode()));
                 }
                 JsonNode result = mapper.readTree(response.body());
-                if (result.path("code").asInt(-1) != 0 || result.path("audio").asText().isBlank()) {
-                    String providerCode = result.path("code").asText("unknown");
+                if (result == null || (!result.hasNonNull("code") && result.path("audio").asText().isBlank())) {
+                    throw providerError("PROVIDER_INVALID_RESPONSE",
+                            "SeedAudio 响应缺少 code 和音频数据（HTTP " + response.statusCode()
+                                    + providerMessage(result) + responseFields(result)
+                                    + ", logId=" + safeLogId(logId) + "）",
+                            HttpStatus.BAD_GATEWAY);
+                }
+                if (result.hasNonNull("code") && result.path("code").asInt(-1) != 0) {
+                    String providerCode = result.path("code").asText();
                     throw providerError("PROVIDER_REQUEST_REJECTED",
-                            "SeedAudio 生成失败（code=" + providerCode + ", logId=" + safeLogId(logId) + "）",
+                            "SeedAudio 生成失败（code=" + safeDetail(providerCode) + ", HTTP " + response.statusCode()
+                                    + providerMessage(result) + ", logId=" + safeLogId(logId) + "）",
+                            HttpStatus.BAD_GATEWAY);
+                }
+                if (result.path("audio").asText().isBlank()) {
+                    throw providerError("PROVIDER_INVALID_RESPONSE",
+                            "SeedAudio 未返回音频数据（HTTP " + response.statusCode()
+                                    + providerMessage(result) + ", logId=" + safeLogId(logId) + "）",
                             HttpStatus.BAD_GATEWAY);
                 }
                 return new SeedResponse(result, logId);
@@ -367,6 +382,38 @@ public class SeedAudioGenerationProvider implements AudioGenerationProvider {
 
     private static String safeLogId(String value) {
         return value == null || value.isBlank() ? "-" : value.replaceAll("[^A-Za-z0-9._:-]", "");
+    }
+
+    private String providerMessage(String body) {
+        try {
+            return providerMessage(mapper.readTree(body));
+        } catch (Exception ex) {
+            return "";
+        }
+    }
+
+    private static String providerMessage(JsonNode body) {
+        if (body == null) return "";
+        for (String pointer : List.of("/message", "/msg", "/detail", "/status_msg", "/error",
+                "/error/message", "/error/Message", "/data/message", "/ResponseMetadata/Error/Message")) {
+            JsonNode value = body.at(pointer);
+            if (value.isTextual() && !value.asText().isBlank()) return ", message=" + safeDetail(value.asText());
+        }
+        return "";
+    }
+
+    private static String responseFields(JsonNode body) {
+        if (body == null || !body.isObject()) return "";
+        List<String> fields = new ArrayList<>();
+        body.fieldNames().forEachRemaining(name -> {
+            if (fields.size() < 12) fields.add(name);
+        });
+        return ", fields=" + fields;
+    }
+
+    private static String safeDetail(String value) {
+        String normalized = value.replaceAll("[\\r\\n\\t]", " ").trim();
+        return normalized.length() > 240 ? normalized.substring(0, 240) : normalized;
     }
 
     private static BizException invalidRequest(String message) {

@@ -21,14 +21,19 @@ import java.util.*;
 import java.util.concurrent.Executor;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 public class AudioTaskApplicationService {
+    private static final Logger log = LoggerFactory.getLogger(AudioTaskApplicationService.class);
     private final ProjectApplicationService projects;
     private final AdsProviderService providers;
     private final AdsModelService models;
@@ -37,11 +42,12 @@ public class AudioTaskApplicationService {
     private final AdsGenerationItemService items;
     private final AdsAudioAssetService assets;
     private final AudioProviderRegistry registry;
+    private final AudioTaskEventStream eventStream;
     private final Executor applicationTaskExecutor;
     private final ObjectMapper mapper;
     private final Path root;
 
-    public AudioTaskApplicationService(ProjectApplicationService projects, AdsProviderService providers, AdsModelService models, AdsDialogueSegmentService segments, AdsGenerationTaskService tasks, AdsGenerationItemService items, AdsAudioAssetService assets, AudioProviderRegistry registry, Executor applicationTaskExecutor, ObjectMapper mapper, @Value("${ads.storage.root:./data/assets}") String root) {
+    public AudioTaskApplicationService(ProjectApplicationService projects, AdsProviderService providers, AdsModelService models, AdsDialogueSegmentService segments, AdsGenerationTaskService tasks, AdsGenerationItemService items, AdsAudioAssetService assets, AudioProviderRegistry registry, AudioTaskEventStream eventStream, Executor applicationTaskExecutor, ObjectMapper mapper, @Value("${ads.storage.root:./data/assets}") String root) {
         this.projects = projects;
         this.providers = providers;
         this.models = models;
@@ -50,6 +56,7 @@ public class AudioTaskApplicationService {
         this.items = items;
         this.assets = assets;
         this.registry = registry;
+        this.eventStream = eventStream;
         this.applicationTaskExecutor = applicationTaskExecutor;
         this.mapper = mapper;
         this.root = Path.of(root).toAbsolutePath().normalize();
@@ -124,7 +131,7 @@ public class AudioTaskApplicationService {
             items.save(i);
         }
         Long taskId = task.getId();
-        applicationTaskExecutor.execute(() -> run(taskId));
+        afterCommit(() -> applicationTaskExecutor.execute(() -> runSafely(taskId)));
         return task;
     }
 
@@ -152,6 +159,10 @@ public class AudioTaskApplicationService {
     public List<AdsGenerationItem> itemList(Long id) {
         get(id);
         return items.list(Wrappers.<AdsGenerationItem>lambdaQuery().eq(AdsGenerationItem::getTaskId, id).orderByAsc(AdsGenerationItem::getItemNo));
+    }
+
+    public Map<String, Object> snapshot(Long id) {
+        return Map.of("task", get(id), "items", itemList(id));
     }
 
     public AdsAudioAsset asset(Long id) {
@@ -221,6 +232,7 @@ public class AudioTaskApplicationService {
         t.setStatus("CANCEL_REQUESTED");
         t.setCancelRequestedAt(new Date());
         tasks.updateById(t);
+        afterCommit(() -> publish(id));
         return get(id);
     }
 
@@ -234,8 +246,37 @@ public class AudioTaskApplicationService {
         item.setErrorCode(null);
         item.setErrorMessage(null);
         items.updateById(item);
-        applicationTaskExecutor.execute(() -> run(item.getTaskId()));
+        AdsGenerationTask task = get(item.getTaskId());
+        task.setStatus("PENDING");
+        task.setErrorCode(null);
+        task.setErrorMessage(null);
+        task.setFinishedAt(null);
+        tasks.updateById(task);
+        afterCommit(() -> {
+            publish(task.getId());
+            applicationTaskExecutor.execute(() -> runSafely(task.getId()));
+        });
         return item;
+    }
+
+    private void runSafely(Long id) {
+        try {
+            run(id);
+        } catch (Exception ex) {
+            log.error("Audio task {} failed outside item generation", id, ex);
+            try {
+                AdsGenerationTask task = get(id);
+                task.setStatus("FAILED");
+                task.setErrorCode(errorCode(ex));
+                task.setErrorMessage(errorMessage(ex));
+                task.setFinishedAt(new Date());
+                task.setUpdatedAt(new Date());
+                tasks.updateById(task);
+                publish(id);
+            } catch (Exception persistError) {
+                log.error("Unable to persist failure for audio task {}", id, persistError);
+            }
+        }
     }
 
     private void run(Long id) {
@@ -247,6 +288,7 @@ public class AudioTaskApplicationService {
         task.setStatus("RUNNING");
         task.setStartedAt(task.getStartedAt() == null ? new Date() : task.getStartedAt());
         tasks.updateById(task);
+        publish(id);
         for (AdsGenerationItem item : itemList(id)) {
             if (!"WAITING".equals(item.getStatus())) continue;
             if ("CANCEL_REQUESTED".equals(get(id).getStatus())) break;
@@ -255,11 +297,12 @@ public class AudioTaskApplicationService {
         finish(id);
     }
 
-    private void generate(AdsGenerationTask task, AdsGenerationItem item) {
+    void generate(AdsGenerationTask task, AdsGenerationItem item) {
         item.setStatus("GENERATING");
         item.setAttemptCount(item.getAttemptCount() + 1);
         item.setStartedAt(new Date());
         items.updateById(item);
+        publish(task.getId());
         try {
             AudioGenerationProvider provider = registry.getRequired(task.getProviderCodeSnapshot());
             Map<String, Object> parameters = resolveReferenceAudio(task.getProjectId(), readParameters(item.getParametersJson()));
@@ -304,16 +347,20 @@ public class AudioTaskApplicationService {
             item.setStatus("SUCCESS");
             item.setFinishedAt(new Date());
             items.updateById(item);
+            publish(task.getId());
         } catch (Exception ex) {
+            log.error("Audio generation failed: task={}, item={}, provider={}, model={}",
+                    task.getId(), item.getId(), task.getProviderCodeSnapshot(), task.getModelCodeSnapshot(), ex);
             item.setStatus("FAILED");
-            item.setErrorCode(ex instanceof BizException b ? b.getCode() : "AUDIO_GENERATION_FAILED");
-            item.setErrorMessage("音频生成失败");
+            item.setErrorCode(errorCode(ex));
+            item.setErrorMessage(errorMessage(ex));
             item.setFinishedAt(new Date());
             items.updateById(item);
+            publish(task.getId());
         }
     }
 
-    private void finish(Long id) {
+    void finish(Long id) {
         AdsGenerationTask task = get(id);
         List<AdsGenerationItem> list = itemList(id);
         int success = (int) list.stream().filter(i -> "SUCCESS".equals(i.getStatus())).count();
@@ -324,14 +371,55 @@ public class AudioTaskApplicationService {
         task.setCancelledCount(cancelling ? task.getTotalCount() - success - failed : 0);
         task.setProgressPercent(new BigDecimal("100"));
         task.setStatus(cancelling ? "CANCELLED" : failed == 0 ? "SUCCEEDED" : success > 0 ? "PARTIAL_SUCCESS" : "FAILED");
+        AdsGenerationItem firstFailure = list.stream().filter(i -> "FAILED".equals(i.getStatus())).findFirst().orElse(null);
+        task.setErrorCode(firstFailure == null ? null : firstFailure.getErrorCode());
+        task.setErrorMessage(firstFailure == null ? null : firstFailure.getErrorMessage());
         task.setFinishedAt(new Date());
         tasks.updateById(task);
+        publish(id);
     }
 
     private void finishCancelled(AdsGenerationTask task) {
         task.setStatus("CANCELLED");
         task.setFinishedAt(new Date());
         tasks.updateById(task);
+        publish(task.getId());
+    }
+
+    private void publish(Long taskId) {
+        if (!eventStream.hasSubscribers(taskId)) return;
+        try {
+            eventStream.publish(taskId, snapshot(taskId));
+        } catch (RuntimeException ex) {
+            log.warn("Unable to publish audio task {} event", taskId, ex);
+        }
+    }
+
+    private void afterCommit(Runnable action) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            action.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                action.run();
+            }
+        });
+    }
+
+    static String errorCode(Exception ex) {
+        return ex instanceof BizException business ? business.getCode() : "AUDIO_GENERATION_FAILED";
+    }
+
+    static String errorMessage(Exception ex) {
+        if (ex instanceof BizException business) return limitError(business.getMessage());
+        return "音频生成发生内部错误（" + ex.getClass().getSimpleName() + "），请查看服务端日志";
+    }
+
+    private static String limitError(String message) {
+        if (message == null || message.isBlank()) return "音频生成失败，请查看服务端日志";
+        return message.length() > 500 ? message.substring(0, 500) : message;
     }
 
     private static String sha(Path p) throws Exception {
